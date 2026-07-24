@@ -3,6 +3,7 @@
 const axios = require('axios');
 const config = require('../config');
 const { Admin, User } = require('../models');
+const logger = require('../utils/logger');
 const { success, fail, BizError, ErrorCode } = require('../utils/response');
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require('../utils/jwt');
 const logger = require('../utils/logger');
@@ -111,7 +112,9 @@ async function userLogin(req, res) {
   });
 
   if (sessionRes.data.errcode) {
-    throw new BizError(ErrorCode.PARAM_INVALID, `微信登录失败: ${sessionRes.data.errmsg}`);
+    // 微信接口返回错误：返回友好提示但不崩溃后端
+    logger.error(`微信登录失败: ${sessionRes.data.errmsg} (errcode=${sessionRes.data.errcode})`);
+    return res.status(503).json(fail(503, `微信服务暂时不可用: ${sessionRes.data.errmsg || 'AppSecret 未配置'}`));
   }
 
   const { openid, unionid, session_key } = sessionRes.data;

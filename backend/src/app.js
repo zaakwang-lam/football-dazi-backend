@@ -1,5 +1,6 @@
 // src/app.js
 // 主入口
+require('express-async-errors');  // 必须第一行，让 async 异常能被 errorHandler 捕获
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
