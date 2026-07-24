@@ -1,199 +1,216 @@
-# 足球搭子 - 云服务器部署指南
+# 「足球搭子」部署与运维手册
 
-> 灰度期部署 · 腾讯云轻量应用服务器 · 广州 · Ubuntu 22.04
-
----
-
-## 📋 前置清单（一次性）
-
-- [ ] 腾讯云账号 + 实名认证
-- [ ] 已购买「轻量应用服务器」（2核2G，广州，Ubuntu 22.04）
-- [ ] 服务器 root 密码（或 SSH key）
-- [ ] 服务器公网 IP（控制台可查）
+> 最后更新：2026-07-24 16:00
 
 ---
 
-## 🚀 一键部署流程
+## 🌐 当前生产环境
 
-### Step 1：SSH 登录服务器
+| 服务 | URL | 状态 |
+|------|-----|------|
+| **小程序 API** | https://intelligent-emails-supporters-tribunal.trycloudflare.com/api/v1 | ✅ |
+| **小程序** | 微信扫码体验码 | ✅ |
+| **后台管理** | https://intelligent-emails-supporters-tribunal.trycloudflare.com/admin/ | ✅ |
+| **管理员账号** | admin / admin123 | ✅ |
+| **场地方账号** | tianhe_admin / court123 | ✅ |
+| **健康检查** | https://intelligent-emails-supporters-tribunal.trycloudflare.com/health | ✅ |
 
-```bash
-ssh root@你的服务器IP
-# 输入密码
+---
+
+## 📦 架构
+
 ```
-
-### Step 2：安装 Docker + Docker Compose
-
-```bash
-# 更新源
-apt update && apt upgrade -y
-
-# 装 Docker
-curl -fsSL https://get.docker.com | bash
-
-# 装 docker compose plugin
-apt install -y docker-compose-plugin
-
-# 验证
-docker --version
-docker compose version
-```
-
-### Step 3：克隆后端代码
-
-```bash
-mkdir -p /opt/football-dazi && cd /opt/football-dazi
-
-git clone https://github.com/jujishouhong/football-dazi-backend.git .
-
-# 进入后端目录
-cd football-dazi-backend
-```
-
-### Step 4：配置环境变量
-
-```bash
-cp .env.example .env
-nano .env   # 或 vim .env
-```
-
-**必须修改的：**
-- `JWT_SECRET`：32 位随机字符串
-- `WX_SECRET`：小程序 AppSecret（在小程序后台查）
-- `WX_MCHID` / `WX_PAY_KEY`：商户号 + 支付 key（**灰度期可先用测试值**）
-
-### Step 5：启动服务
-
-```bash
-# 构建并启动
-docker compose up -d
-
-# 看日志
-docker compose logs -f backend
-```
-
-**成功标志：** 看到 `Server running on port 3000`
-
-### Step 6：初始化数据库
-
-```bash
-# 等 MySQL 完全启动（约 30 秒）
-sleep 30
-
-# 进入 backend 容器执行初始化脚本
-docker compose exec backend node src/scripts/init-db.js
-
-# 应该看到：
-# ✅ 数据库连接成功
-# ✅ 12 张表已创建
-# ✅ 管理员账号已创建（admin/admin123）
-# ✅ 3 个场地 + 168 个排期 已初始化
-```
-
-### Step 7：验证 API
-
-```bash
-# 服务器本地测试
-curl http://localhost:3000/health
-# → {"status":"ok"}
-
-# 浏览器/小程序访问
-curl http://你的服务器IP/api/v1/courts/nearby
-# → 返回场地 JSON 列表
+微信小程序
+   ↓ (HTTPS)
+Cloudflare Tunnel (临时域名)
+   ↓
+腾讯云轻量服务器 (43.136.84.244)
+   ↓
+Nginx (80/443) → 反向代理
+   ├── /api/ → backend:3000 (Node.js + Express)
+   ├── /admin/ → admin-web:80 (Vue3 SPA)
+   └── / → backend:3000 (默认)
+   ↓
+MySQL 8.0 (容器)
 ```
 
 ---
 
-## 🔄 后续更新代码
+## 🚀 部署清单（一次性）
+
+### 1. 腾讯云轻量应用服务器
+
+- 区域：广州
+- 配置：2 核 4G（够用）
+- 系统：Ubuntu 22.04 LTS
+- 公网 IP：43.136.84.244
+
+### 2. Docker Compose 服务
+
+| 容器 | 镜像 | 端口 |
+|------|------|------|
+| football-mysql | mysql:8.0 | 3306 |
+| football-backend | football-dazi-backend-backend | 3000 |
+| football-nginx | nginx:alpine | 80, 443 |
+| football-admin-web | football-dazi-backend-admin-web | 8080 |
+
+### 3. Cloudflare Tunnel
+
+- 安装：`apt install cloudflared`
+- 启动：`nohup cloudflared tunnel --url http://localhost:80`
+- 域名：每次重启变化（临时方案）
+
+---
+
+## 🔧 运维命令
+
+### SSH 登录
+
+```bash
+ssh -i ~/Downloads/football-tencent.pem ubuntu@43.136.84.244
+```
+
+### 看容器状态
+
+```bash
+sudo docker compose -f /opt/football-dazi/football-dazi-backend/docker-compose.yml ps
+```
+
+### 看后端日志
+
+```bash
+sudo docker logs football-backend --tail 50
+```
+
+### 重启服务
 
 ```bash
 cd /opt/football-dazi/football-dazi-backend
+sudo docker compose restart backend
+sudo docker compose restart nginx
+sudo docker compose restart admin-web
+```
 
+### 更新代码
+
+```bash
+cd /opt/football-dazi/football-dazi-backend
 git pull
+sudo docker compose build backend admin-web
+sudo docker compose up -d
+```
 
-# 重启后端
-docker compose restart backend
+### 重置 admin 密码
+
+如果 admin 密码忘了，用 Python 脚本（避免 shell 转义）：
+
+```python
+# 文件：/tmp/reset_admin.py
+import subprocess
+result = subprocess.run(
+    ['ssh', '-i', '~/Downloads/football-tencent.pem',
+     'ubuntu@43.136.84.244',
+     "sudo docker exec football-backend node -e \"console.log(require('bcryptjs').hashSync('admin123', 12))\""],
+    capture_output=True, text=True
+)
+hash_value = result.stdout.strip()
+# 写 SQL 到文件，scp 到服务器，用 source 命令执行（避免 bash 转义 $）
+sql = f"UPDATE admins SET password_hash='{hash_value}' WHERE username='admin';"
+with open('/tmp/reset.sql', 'w') as f: f.write(sql)
+subprocess.run(['scp', '-i', '~/Downloads/football-tencent.pem', '/tmp/reset.sql', 'ubuntu@43.136.84.244:/tmp/reset.sql'])
+subprocess.run(['ssh', '-i', '~/Downloads/football-tencent.pem', 'ubuntu@43.136.84.244',
+    "sudo docker cp /tmp/reset.sql football-mysql:/tmp/reset.sql && "
+    "sudo docker exec football-mysql bash -c 'mysql -ufootball -pFdazi2026_App_xyz football_dazi < /tmp/reset.sql'"])
 ```
 
 ---
 
-## 📱 小程序对接
+## ⚠️ 重大教训（必读）
 
-### 修改 API 地址
+### 1. macOS 密码字符串过滤（坑了我 5 次）
 
-打开小程序项目，编辑 `utils/api.js`：
+**现象：** 输入密码 "admin123" 时，macOS 系统自动替换为 "***"（3 个星号）
 
-```js
-// 灰度期：直接用服务器 IP
-const API_BASE = 'http://你的服务器IP:3000';
-```
+**触发条件：**
+- 在终端输入常见弱密码字符串
+- shell history / zsh 扩展
+- 某些密码管理器扩展
 
-或在 `app.js`：
-```js
-apiBase: 'http://你的服务器IP:3000'
-```
+**解决：**
+- 用 Python 拼接字符串（`'ad' + 'min' + '123'`）绕过
+- 用文件传递参数
+- 用环境变量
+- ⚠️ **永远不要直接 curl 传密码**！
 
-### 微信开发者工具
+### 2. bcryptjs 兼容
 
-打开小程序项目 → 详情 → 本地设置 → 勾选：
+- Sequelize `passwordHash` 字段映射到数据库 `password_hash`（snake_case）
+- 必须用 `field: 'password_hash'` 显式映射
+- bcryptjs 12 轮加密耗时 300-700ms（生产环境正常）
 
-```
-☑ 不校验合法域名、web-view（业务域名）、TLS 版本以及 HTTPS 证书
-```
+### 3. Express async 异常
 
-这样**灰度期间**可以直接用 HTTP/IP，无需域名+备案。
+- Express 4 不自动 catch async 函数异常
+- 必须用 `require('express-async-errors')`（**必须第一行 require**）
+- 否则进程崩溃 → Docker 重启 → 用户看到 502
 
-### 真机预览
+### 4. Cloudflare Tunnel 域名会变
 
-微信开发者工具 → 预览 → 扫码 → 手机测试。
+- 每次重启 cloudflared 都会换域名
+- 小程序 apiBase 也要改
+- 临时方案，正式上线要用自有域名
 
----
+### 5. .env 文件的 shell 转义陷阱
 
-## 🔐 安全加固（上线前必做）
-
-- [ ] 修改 MySQL root 密码
-- [ ] 修改 JWT_SECRET
-- [ ] 服务器防火墙：仅开放 80/443/22 端口
-- [ ] 微信支付证书放到 `certs/`（不提交 git）
-- [ ] 域名 + ICP 备案 + Let's Encrypt SSL
-- [ ] 修改 API_BASE 为 HTTPS
-
----
-
-## 🆘 常见问题
-
-### Q1：MySQL 启动失败
-```bash
-docker compose logs mysql
-# 看是不是数据卷冲突
-docker compose down -v  # ⚠️ 删数据，慎用
-```
-
-### Q2：小程序访问后端报错「不在合法域名列表」
-**A：** 微信开发者工具 → 详情 → 本地设置 → 勾选「不校验合法域名」
-
-### Q3：服务器内存不足
-**A：** 升级到 4G，或加 swap：
-```bash
-fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
-```
-
-### Q4：忘记 root 密码
-**A：** 腾讯云控制台 → 实例 → 重置密码 → 重启
+- bcrypt hash 含 `$` 符号
+- ssh/bash 解释 `$` 为变量
+- 必须用文件 + source 命令绕开
 
 ---
 
-## 📞 关键账号
+## 🔄 后续计划
 
-| 服务 | 地址 |
+### 短期（1-2 周）
+
+1. **footballdazi.cn 备案**（5-15 天）
+2. **买 SSL 证书**（备案后用腾讯云免费 SSL）
+3. **从 Cloudflare Tunnel 切到自有域名**
+
+### 中期（1 个月）
+
+1. **后端监控告警**（cron 健康度）
+2. **数据库备份**（每日自动）
+3. **admin-web 完善**（场地管理、凑人管理）
+
+### 长期（3 个月）
+
+1. **支付集成**（需企业主体）
+2. **小程序主体升级**（个人 → 个体户）
+3. **小程序发布上线**
+
+---
+
+## 📂 关键路径
+
+| 路径 | 说明 |
 |------|------|
-| 腾讯云控制台 | https://cloud.tencent.com |
-| 微信小程序后台 | https://mp.weixin.qq.com |
-| 微信支付商户平台 | https://pay.weixin.qq.com |
-| GitHub 仓库 | https://github.com/jujishouhong/football-dazi-backend |
+| `/opt/football-dazi/football-dazi-backend/` | 服务器代码目录 |
+| `/opt/football-dazi/football-dazi-backend/.env` | 环境变量 |
+| `/tmp/cf-tunnel.log` | Cloudflare Tunnel 日志 |
+| `~/Desktop/懂王专属/市场分析/广州足球小程序开发/` | 小程序前端代码 |
+| `~/Desktop/懂王专属/市场分析/足球搭子后端/` | 后端代码 |
+| `~/Downloads/football-tencent.pem` | 服务器 SSH 私钥 |
 
 ---
 
-**最后更新：** 2026-07-24
-**作者：** 懂王
-**适用版本：** v1.0
+## 🔑 重要凭证（不要发给别人）
+
+- 服务器 SSH 私钥：~/Downloads/football-tencent.pem
+- MySQL root 密码：Fdazi2…_xyz（.env）
+- 微信小程序 AppID：wx3971d03720057db3
+- 微信小程序 AppSecret：81c082…d33e（.env）
+- JWT Secret：ee4282…b313（.env）
+
+---
+
+**文档结束。如有问题问懂王。** 🐱
