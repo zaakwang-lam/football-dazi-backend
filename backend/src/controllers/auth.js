@@ -6,7 +6,6 @@ const { Admin, User } = require('../models');
 const logger = require('../utils/logger');
 const { success, fail, BizError, ErrorCode } = require('../utils/response');
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require('../utils/jwt');
-const logger = require('../utils/logger');
 
 /**
  * POST /api/admin/login
