@@ -1,0 +1,71 @@
+// 全局样式
+$primary: #FF6B00;
+$success: #2ECC71;
+$warning: #FFB800;
+$danger: #FF4757;
+$info: #007AFF;
+
+$bg-page: #F5F7FA;
+$bg-card: #FFFFFF;
+$text-primary: #1A1A1A;
+$text-secondary: #666666;
+$text-tertiary: #999999;
+
+body {
+  background: $bg-page;
+  color: $text-primary;
+}
+
+// 卡片通用样式
+.page-card {
+  background: $bg-card;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+// 数据卡片
+.metric-card {
+  background: linear-gradient(135deg, #fff 0%, #fff 100%);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+
+  .metric-label {
+    font-size: 14px;
+    color: $text-tertiary;
+    margin-bottom: 8px;
+  }
+
+  .metric-value {
+    font-size: 32px;
+    font-weight: 700;
+    color: $primary;
+    line-height: 1.2;
+  }
+
+  .metric-extra {
+    margin-top: 8px;
+    font-size: 12px;
+    color: $text-tertiary;
+  }
+}
+
+// 主色调按钮（Element Plus 自带橙色主题）
+.el-button--primary {
+  --el-button-bg-color: #{$primary};
+  --el-button-border-color: #{$primary};
+  --el-button-hover-bg-color: #{darken($primary, 8%)};
+  --el-button-hover-border-color: #{darken($primary, 8%)};
+  --el-button-active-bg-color: #{darken($primary, 12%)};
+  --el-button-active-border-color: #{darken($primary, 12%)};
+}
+
+// 状态 tag
+.status-tag {
+  &.pending { background: #FFF7E6; color: $warning; }
+  &.paid { background: #E6F2FF; color: $info; }
+  &.refunded { background: #F5F7FA; color: $text-tertiary; }
+  &.canceled { background: #F5F7FA; color: $text-tertiary; }
+  &.completed { background: #E8F8EE; color: $success; }
+}
