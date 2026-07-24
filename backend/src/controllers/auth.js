@@ -26,10 +26,10 @@ async function adminLogin(req, res) {
   }
 
   // DEBUG: 看 admin 实例
-  logger.info(`DEBUG admin login: username=${admin.username}, role=${admin.role}, hash=${admin.passwordHash?.substring(0, 15)}, hashLen=${admin.passwordHash?.length}`);
+  logger.info(`DEBUG admin login: reqPassword='${password}' (len=${password?.length}), username=${admin.username}, role=${admin.role}, hash=${admin.passwordHash?.substring(0, 15)}, hashLen=${admin.passwordHash?.length}`);
   const bcrypt = require('bcryptjs');
   const directVerify = bcrypt.compareSync(password, admin.passwordHash);
-  logger.info(`DEBUG direct bcrypt.compareSync('${password}', hash)=${directVerify}`);
+  logger.info(`DEBUG direct bcrypt.compareSync(reqPassword, hash)=${directVerify}`);
 
   const valid = await admin.verifyPassword(password);
   if (!valid) {
