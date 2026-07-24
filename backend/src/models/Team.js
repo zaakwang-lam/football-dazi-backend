@@ -17,7 +17,7 @@ module.exports = (sequelize) => {
     wins: { type: DataTypes.INTEGER, defaultValue: 0 },
     draws: { type: DataTypes.INTEGER, defaultValue: 0 },
     losses: { type: DataTypes.INTEGER, defaultValue: 0 },
-    members: { type: DataTypes.INTEGER, defaultValue: 1 },
+    memberCount: { type: DataTypes.INTEGER, defaultValue: 1, field: 'member_count' },
     status: { type: DataTypes.TINYINT, defaultValue: 1 }
   }, {
     tableName: 'teams'

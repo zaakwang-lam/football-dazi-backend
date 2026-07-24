@@ -28,7 +28,7 @@ async function getTeamList(req, res) {
       district: t.district,
       motto: t.motto,
       level: t.level,
-      members: t.members,
+      memberCount: t.memberCount,
       attendance: t.attendance,
       wins: t.wins,
       draws: t.draws,
@@ -60,7 +60,7 @@ async function createTeam(req, res) {
     recruitment: recruitment !== false,
     captainId: userId,
     founded: new Date().toISOString().split('T')[0],
-    members: 1
+    memberCount: 1
   });
 
   // 创建者自动加入
@@ -84,7 +84,7 @@ async function getTeamDetail(req, res) {
   const { id } = req.params;
   const team = await Team.findByPk(id, {
     include: [
-      { model: TeamMember, as: 'members', include: [{ model: User, as: 'user', attributes: ['id', 'nickname', 'avatarUrl'] }] }
+      { model: TeamMember, as: 'teamMembers', include: [{ model: User, as: 'user', attributes: ['id', 'nickname', 'avatarUrl'] }] }
     ]
   });
 
@@ -100,14 +100,14 @@ async function getTeamDetail(req, res) {
     motto: team.motto,
     description: team.description,
     level: team.level,
-    members: team.members,
+    memberCount: team.memberCount,
     attendance: team.attendance,
     wins: team.wins,
     draws: team.draws,
     losses: team.losses,
     recruitment: team.recruitment,
     founded: team.founded,
-    memberList: team.members?.map(m => ({
+    memberList: team.teamMembers?.map(m => ({
       id: m.userId,
       nickname: m.user?.nickname,
       avatarUrl: m.user?.avatarUrl,

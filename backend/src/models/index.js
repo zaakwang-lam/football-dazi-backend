@@ -34,8 +34,8 @@ CourtSchedule.belongsTo(Court, { foreignKey: 'courtId', as: 'court' });
 CourtSchedule.hasOne(Order, { foreignKey: 'scheduleId', as: 'order' });
 Order.belongsTo(CourtSchedule, { foreignKey: 'scheduleId', as: 'schedule' });
 
-// 球队和成员
-Team.hasMany(TeamMember, { foreignKey: 'teamId', as: 'members' });
+// 球队和成员（as 必须唯一，不能与 Team 表字段重名）
+Team.hasMany(TeamMember, { foreignKey: 'teamId', as: 'teamMembers' });
 TeamMember.belongsTo(Team, { foreignKey: 'teamId', as: 'team' });
 
 // 用户和球队成员
