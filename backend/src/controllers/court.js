@@ -87,10 +87,17 @@ async function getCourtSchedule(req, res) {
     order: [['date', 'ASC'], ['timeSlot', 'ASC']]
   });
 
-  // 按日期分组
+  // 按日期分组（兼容 Date 对象 / 字符串 / DATEONLY）
   const grouped = {};
   schedules.forEach(s => {
-    const dateStr = s.date.toISOString().split('T')[0];
+    let dateStr;
+    if (s.date instanceof Date) {
+      dateStr = s.date.toISOString().split('T')[0];
+    } else if (typeof s.date === 'string') {
+      dateStr = s.date.substring(0, 10);
+    } else {
+      dateStr = String(s.date).substring(0, 10);
+    }
     if (!grouped[dateStr]) grouped[dateStr] = [];
     grouped[dateStr].push({
       timeSlot: s.timeSlot,
