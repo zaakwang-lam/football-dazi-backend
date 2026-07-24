@@ -83,6 +83,16 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl
       - ./nginx/logs:/var/log/nginx
 
+  # ========== 后台管理 Web（Vue3 SPA） ==========
+  admin-web:
+    build: ./admin-web
+    container_name: football-admin-web
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
 volumes:
   mysql_data:
     driver: local
