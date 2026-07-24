@@ -1,0 +1,333 @@
+// src/controllers/order.js
+// 订单 + 支付控制器
+const { Order, Court, CourtSchedule, User, PaymentOrder, PaymentRefund } = require('../models');
+const wechatPay = require('../services/wechat-pay');
+const { success, fail, BizError, ErrorCode } = require('../utils/response');
+const logger = require('../utils/logger');
+
+/**
+ * POST /api/v1/orders
+ * 创建订单（C 端）
+ */
+async function createOrder(req, res) {
+  const { courtId, scheduleId, contactName, contactPhone, remark } = req.body;
+  const userId = req.user.id;
+
+  if (!courtId || !scheduleId || !contactName || !contactPhone) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '缺少必要参数');
+  }
+
+  // 验证排期
+  const schedule = await CourtSchedule.findOne({
+    where: { id: scheduleId, courtId },
+    include: [{ model: Court, as: 'court' }]
+  });
+
+  if (!schedule) {
+    throw new BizError(ErrorCode.NOT_FOUND, '排期不存在');
+  }
+  if (schedule.status === 'booked') {
+    throw new BizError(ErrorCode.CONFLICT, '该时段已被预订');
+  }
+  if (schedule.status === 'closed') {
+    throw new BizError(ErrorCode.CONFLICT, '该时段已关闭');
+  }
+
+  // 创建订单 + 锁排期
+  const order = await Order.create({
+    orderNo: wechatPay.generateOrderNo('O'),
+    userId,
+    courtId,
+    scheduleId,
+    amount: schedule.price,
+    status: 'pending',
+    contactName,
+    contactPhone,
+    remark: remark || ''
+  });
+
+  // 临时锁定排期（5 分钟内未支付释放）
+  schedule.orderId = order.id;
+  await schedule.save();
+
+  res.json(success({
+    orderId: order.id,
+    orderNo: order.orderNo,
+    amount: parseFloat(order.amount)
+  }));
+}
+
+/**
+ * POST /api/v1/payment/unified-order
+ * 调起微信支付
+ */
+async function payOrder(req, res) {
+  const { orderId, openid } = req.body;
+  const userId = req.user.id;
+
+  const order = await Order.findOne({
+    where: { id: orderId, userId },
+    include: [{ model: Court, as: 'court' }]
+  });
+
+  if (!order) {
+    throw new BizError(ErrorCode.NOT_FOUND, '订单不存在');
+  }
+  if (order.status !== 'pending') {
+    throw new BizError(ErrorCode.CONFLICT, `订单状态 ${order.status}，无法支付`);
+  }
+  if (!openid) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '缺少 openid');
+  }
+
+  // 调微信统一下单
+  const amount = parseFloat(order.amount);
+  const totalFee = Math.round(amount * 100);  // 元 → 分
+  const body = `${order.court.name} ${order.contactName}`;
+
+  const payParams = await wechatPay.unifiedOrder({
+    openid,
+    outTradeNo: order.orderNo,
+    totalFee,
+    body,
+    notifyUrl: process.env.WX_NOTIFY_URL,
+    attach: JSON.stringify({ orderId: order.id })
+  });
+
+  // 保存支付订单记录
+  await PaymentOrder.create({
+    orderNo: order.orderNo,
+    userId,
+    courtId: order.courtId,
+    businessType: 'court_book',
+    amount: amount,
+    status: 'pending',
+    payMethod: 'wxpay',
+    prepayId: payParams.package?.replace('prepay_id=', '')
+  });
+
+  res.json(success({
+    orderId: order.id,
+    orderNo: order.orderNo,
+    amount: amount,
+    payParams
+  }));
+}
+
+/**
+ * POST /api/payment/notify
+ * 微信支付回调（无鉴权）
+ */
+async function paymentNotify(req, res) {
+  const xml = req.body;
+  let result;
+
+  try {
+    const parsed = await require('../utils/wechat-sign').xmlToObj(xml);
+    result = parsed;
+
+    logger.info(`支付回调: out_trade_no=${result.out_trade_no}, result_code=${result.result_code}`);
+
+    // 验签
+    if (!require('../utils/wechat-sign').verifySign(result)) {
+      logger.warn('支付回调验签失败');
+      return res.send(require('../utils/wechat-sign').objToXml({
+        return_code: 'FAIL',
+        return_msg: '签名失败'
+      }));
+    }
+
+    if (result.result_code === 'SUCCESS' && result.return_code === 'SUCCESS') {
+      // 幂等：通过 transaction_id 去重
+      const existed = await PaymentOrder.findOne({ where: { transactionId: result.transaction_id } });
+      if (existed && existed.status === 'paid') {
+        logger.info(`订单 ${result.out_trade_no} 已处理，跳过`);
+        return res.send(require('../utils/wechat-sign').objToXml({
+          return_code: 'SUCCESS',
+          return_msg: 'OK'
+        }));
+      }
+
+      // 更新订单
+      const order = await Order.findOne({ where: { orderNo: result.out_trade_no } });
+      if (order) {
+        order.status = 'paid';
+        order.payMethod = 'wxpay';
+        order.transactionId = result.transaction_id;
+        order.payAmount = parseInt(result.total_fee) / 100;
+        order.payTime = new Date();
+        await order.save();
+
+        // 更新排期
+        if (order.scheduleId) {
+          await CourtSchedule.update(
+            { status: 'booked' },
+            { where: { id: order.scheduleId } }
+          );
+        }
+
+        // 更新支付订单
+        await PaymentOrder.update(
+          {
+            status: 'paid',
+            transactionId: result.transaction_id,
+            payTime: new Date()
+          },
+          { where: { orderNo: result.out_trade_no } }
+        );
+
+        logger.info(`订单 ${order.orderNo} 支付成功`);
+      }
+    }
+
+    res.send(require('../utils/wechat-sign').objToXml({
+      return_code: 'SUCCESS',
+      return_msg: 'OK'
+    }));
+  } catch (e) {
+    logger.error('处理支付回调异常:', e);
+    res.send(require('../utils/wechat-sign').objToXml({
+      return_code: 'FAIL',
+      return_msg: e.message
+    }));
+  }
+}
+
+/**
+ * POST /api/v1/payment/refund
+ * 申请退款
+ */
+async function applyRefund(req, res) {
+  const { orderId, reason, amount } = req.body;
+  const userId = req.user.id;
+
+  const order = await Order.findOne({ where: { id: orderId, userId } });
+  if (!order) {
+    throw new BizError(ErrorCode.NOT_FOUND, '订单不存在');
+  }
+  if (order.status !== 'paid') {
+    throw new BizError(ErrorCode.CONFLICT, '订单未支付，无法退款');
+  }
+
+  // 退款金额（默认全额）
+  const refundAmount = amount ? parseFloat(amount) : parseFloat(order.payAmount);
+  if (refundAmount > parseFloat(order.payAmount)) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '退款金额超过实付金额');
+  }
+
+  // 调微信退款
+  const refundRes = await wechatPay.refund({
+    outTradeNo: order.orderNo,
+    outRefundNo: wechatPay.generateOrderNo('R'),
+    totalFee: Math.round(parseFloat(order.payAmount) * 100),
+    refundFee: Math.round(refundAmount * 100),
+    refundDesc: reason || '用户取消'
+  });
+
+  // 保存退款记录
+  const refund = await PaymentRefund.create({
+    refundNo: refundRes.outRefundNo,
+    refundId: refundRes.refundId,
+    orderNo: order.orderNo,
+    amount: refundAmount,
+    reason: reason || '',
+    status: 'processing',
+    operatorId: userId
+  });
+
+  res.json(success({
+    refundId: refund.id,
+    refundNo: refund.refundNo,
+    amount: refundAmount,
+    status: 'processing',
+    estimatedArrival: '1-3个工作日'
+  }));
+}
+
+/**
+ * GET /api/v1/orders
+ * 用户的订单列表
+ */
+async function listMyOrders(req, res) {
+  const userId = req.user.id;
+  const { status, page = 1, pageSize = 10 } = req.query;
+
+  const where = { userId };
+  if (status && status !== 'all') where.status = status;
+
+  const offset = (Number(page) - 1) * Number(pageSize);
+  const { rows, count } = await Order.findAndCountAll({
+    where,
+    include: [{ model: Court, as: 'court', attributes: ['id', 'name', 'type'] }],
+    order: [['created_at', 'DESC']],
+    limit: Number(pageSize),
+    offset
+  });
+
+  res.json(success({
+    list: rows.map(o => ({
+      id: o.id,
+      orderNo: o.orderNo,
+      courtName: o.court?.name,
+      courtType: o.court?.type,
+      amount: parseFloat(o.amount),
+      status: o.status,
+      createdAt: o.createdAt
+    })),
+    total: count,
+    page: Number(page),
+    pageSize: Number(pageSize)
+  }));
+}
+
+/**
+ * GET /api/v1/orders/:id
+ * 订单详情
+ */
+async function getOrderDetail(req, res) {
+  const { id } = req.params;
+  const userId = req.user.id;
+
+  const order = await Order.findOne({
+    where: { id, userId },
+    include: [
+      { model: Court, as: 'court' },
+      { model: CourtSchedule, as: 'schedule' }
+    ]
+  });
+
+  if (!order) {
+    throw new BizError(ErrorCode.NOT_FOUND, '订单不存在');
+  }
+
+  res.json(success({
+    id: order.id,
+    orderNo: order.orderNo,
+    status: order.status,
+    amount: parseFloat(order.amount),
+    payAmount: parseFloat(order.payAmount || order.amount),
+    contactName: order.contactName,
+    contactPhone: order.contactPhone,
+    payTime: order.payTime,
+    createdAt: order.createdAt,
+    court: {
+      id: order.court?.id,
+      name: order.court?.name,
+      type: order.court?.type,
+      address: order.court?.address
+    },
+    schedule: order.schedule ? {
+      date: order.schedule.date,
+      timeSlot: order.schedule.timeSlot
+    } : null
+  }));
+}
+
+module.exports = {
+  createOrder,
+  payOrder,
+  paymentNotify,
+  applyRefund,
+  listMyOrders,
+  getOrderDetail
+};

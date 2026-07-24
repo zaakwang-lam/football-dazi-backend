@@ -1,0 +1,87 @@
+// src/models/index.js
+// 模型索引 + 关联关系
+const { sequelize } = require('../utils/db');
+
+const User = require('./User')(sequelize);
+const Court = require('./Court')(sequelize);
+const CourtSchedule = require('./CourtSchedule')(sequelize);
+const Order = require('./Order')(sequelize);
+const Team = require('./Team')(sequelize);
+const TeamMember = require('./TeamMember')(sequelize);
+const LfgPost = require('./LfgPost')(sequelize);
+const LfgJoin = require('./LfgJoin')(sequelize);
+const Checkin = require('./Checkin')(sequelize);
+const AaPayment = require('./AaPayment')(sequelize);
+const Admin = require('./Admin')(sequelize);
+const PaymentOrder = require('./PaymentOrder')(sequelize);
+const PaymentRefund = require('./PaymentRefund')(sequelize);
+
+// ===== 关联关系 =====
+
+// 用户和订单
+User.hasMany(Order, { foreignKey: 'userId', as: 'orders' });
+Order.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+// 场地和订单
+Court.hasMany(Order, { foreignKey: 'courtId', as: 'orders' });
+Order.belongsTo(Court, { foreignKey: 'courtId', as: 'court' });
+
+// 场地和排期
+Court.hasMany(CourtSchedule, { foreignKey: 'courtId', as: 'schedules' });
+CourtSchedule.belongsTo(Court, { foreignKey: 'courtId', as: 'court' });
+
+// 排期和订单
+CourtSchedule.hasOne(Order, { foreignKey: 'scheduleId', as: 'order' });
+Order.belongsTo(CourtSchedule, { foreignKey: 'scheduleId', as: 'schedule' });
+
+// 球队和成员
+Team.hasMany(TeamMember, { foreignKey: 'teamId', as: 'members' });
+TeamMember.belongsTo(Team, { foreignKey: 'teamId', as: 'team' });
+
+// 用户和球队成员
+User.hasMany(TeamMember, { foreignKey: 'userId', as: 'teamMemberships' });
+TeamMember.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+// 球队和队长
+Team.belongsTo(User, { foreignKey: 'captainId', as: 'captain' });
+
+// 凑人和报名
+LfgPost.hasMany(LfgJoin, { foreignKey: 'lfgId', as: 'joins' });
+LfgJoin.belongsTo(LfgPost, { foreignKey: 'lfgId', as: 'post' });
+
+LfgPost.belongsTo(User, { foreignKey: 'userId', as: 'publisher' });
+LfgJoin.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+// 球队考勤
+Team.hasMany(Checkin, { foreignKey: 'teamId', as: 'checkins' });
+Checkin.belongsTo(Team, { foreignKey: 'teamId', as: 'team' });
+Checkin.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+// AA 收款
+Team.hasMany(AaPayment, { foreignKey: 'teamId', as: 'aaPayments' });
+AaPayment.belongsTo(Team, { foreignKey: 'teamId', as: 'team' });
+
+// 管理员和场地
+Court.belongsTo(Admin, { foreignKey: 'ownerId', as: 'owner' });
+Admin.hasMany(Court, { foreignKey: 'ownerId', as: 'courts' });
+
+// 支付订单
+PaymentOrder.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+PaymentOrder.belongsTo(Court, { foreignKey: 'courtId', as: 'court' });
+
+module.exports = {
+  sequelize,
+  User,
+  Court,
+  CourtSchedule,
+  Order,
+  Team,
+  TeamMember,
+  LfgPost,
+  LfgJoin,
+  Checkin,
+  AaPayment,
+  Admin,
+  PaymentOrder,
+  PaymentRefund
+};

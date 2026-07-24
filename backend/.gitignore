@@ -1,0 +1,63 @@
+# ============ 操作系统 ============
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ============ IDE ============
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-project
+.history/
+
+# ============ Node.js ============
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json.bak
+
+# ============ 环境变量 ============
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+!.env.example
+
+# ============ 日志 ============
+*.log
+logs/
+*.pid
+
+# ============ 测试 ============
+coverage/
+.nyc_output/
+
+# ============ 构建产物 ============
+dist/
+build/
+
+# ============ 微信支付证书（绝密！）===========
+certs/
+*.pem
+*.key
+*.p12
+
+# ============ 数据库备份 ============
+*.sql
+*.sql.gz
+*.dump
+
+# ============ 上传文件 ============
+uploads/
+public/uploads/
+
+# ============ 临时文件 ============
+.tmp/
+tmp/
+temp/
+.cache/

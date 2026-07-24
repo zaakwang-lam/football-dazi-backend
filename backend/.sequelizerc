@@ -1,0 +1,11 @@
+{
+  "config": {
+    "database": {
+      "username": "root",
+      "password": "your_password",
+      "database": "football_dazi",
+      "host": "127.0.0.1",
+      "dialect": "mysql"
+    }
+  }
+}

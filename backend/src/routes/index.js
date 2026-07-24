@@ -1,0 +1,57 @@
+// src/routes/index.js
+// 路由汇总
+const express = require('express');
+const router = express.Router();
+
+// 鉴权
+const authCtrl = require('../controllers/auth');
+const { adminAuth, userAuth } = require('../middlewares/auth');
+
+// 业务
+const orderCtrl = require('../controllers/order');
+const courtCtrl = require('../controllers/court');
+const lfgCtrl = require('../controllers/lfg');
+const teamCtrl = require('../controllers/team');
+const dashCtrl = require('../controllers/dashboard');
+
+// ===== 公共接口 =====
+router.post('/api/admin/login', authCtrl.adminLogin);
+router.post('/api/admin/refresh', authCtrl.refreshToken);
+router.post('/api/user/login', authCtrl.userLogin);
+
+// ===== 微信支付回调（无鉴权）=====
+router.post('/api/payment/notify', express.text({ type: '*/*' }), orderCtrl.paymentNotify);
+
+// ===== C 端用户接口（需 userAuth）=====
+router.post('/api/v1/orders', userAuth(), orderCtrl.createOrder);
+router.get('/api/v1/orders', userAuth(), orderCtrl.listMyOrders);
+router.get('/api/v1/orders/:id', userAuth(), orderCtrl.getOrderDetail);
+router.post('/api/v1/payment/unified-order', userAuth(), orderCtrl.payOrder);
+router.post('/api/v1/payment/refund', userAuth(), orderCtrl.applyRefund);
+
+router.get('/api/v1/courts/nearby', courtCtrl.getNearbyCourts);
+router.get('/api/v1/courts/:id', courtCtrl.getCourtDetail);
+router.get('/api/v1/courts/:id/schedule', courtCtrl.getCourtSchedule);
+
+router.get('/api/v1/lfg/list', lfgCtrl.getLfgList);
+router.post('/api/v1/lfg', userAuth(), lfgCtrl.publishLfg);
+router.post('/api/v1/lfg/:id/join', userAuth(), lfgCtrl.joinLfg);
+
+router.get('/api/v1/teams', teamCtrl.getTeamList);
+router.post('/api/v1/teams', userAuth(), teamCtrl.createTeam);
+router.get('/api/v1/teams/:id', teamCtrl.getTeamDetail);
+router.post('/api/v1/teams/:id/checkin', userAuth(), teamCtrl.checkin);
+
+// ===== 管理员接口 =====
+router.get('/api/admin/profile', adminAuth(), authCtrl.getAdminProfile);
+router.post('/api/admin/logout', adminAuth(), authCtrl.logout);
+
+router.get('/api/admin/courts', adminAuth(), courtCtrl.adminListCourts);
+router.post('/api/admin/courts', adminAuth(['super_admin', 'court_admin']), courtCtrl.adminCreateCourt);
+router.post('/api/admin/courts/:id/audit', adminAuth(['super_admin']), courtCtrl.auditCourt);
+
+router.get('/api/admin/dashboard/overview', adminAuth(['super_admin', 'ops']), dashCtrl.getOverview);
+router.get('/api/admin/dashboard/revenue', adminAuth(['super_admin', 'ops']), dashCtrl.getRevenue);
+router.get('/api/admin/dashboard/courts', adminAuth(['super_admin', 'ops']), dashCtrl.getTopCourts);
+
+module.exports = router;
