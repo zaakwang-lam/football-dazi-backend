@@ -113,8 +113,45 @@ async function joinLfg(req, res) {
   res.json(success(null, '报名成功'));
 }
 
+/**
+ * GET /api/v1/lfg/:id
+ * 凑人/约战详情
+ */
+async function getLfgDetail(req, res) {
+  const { id } = req.params;
+
+  const post = await LfgPost.findByPk(id, {
+    include: [
+      { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'] },
+      { model: LfgJoin, as: 'joins', attributes: ['id', 'userId', 'status'] }
+    ]
+  });
+
+  if (!post) {
+    throw new BizError(ErrorCode.NOT_FOUND, '信息不存在');
+  }
+
+  res.json(success({
+    id: post.id,
+    type: post.type,
+    title: post.title,
+    location: post.location,
+    playTime: post.playTime,
+    needCount: post.needCount,
+    joinedCount: post.joinedCount,
+    level: post.level,
+    contact: post.contact,
+    description: post.description,
+    status: post.status,
+    publisher: post.publisher,
+    joinCount: post.joins ? post.joins.length : 0,
+    createdAt: post.createdAt
+  }));
+}
+
 module.exports = {
   getLfgList,
+  getLfgDetail,
   publishLfg,
   joinLfg
 };

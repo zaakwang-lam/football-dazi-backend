@@ -36,6 +36,7 @@ router.get('/api/v1/courts/:id/free-slots', courtCtrl.getFreeSlots);
 router.post('/api/v1/courts/:id/free-slots', userAuth(), courtCtrl.publishFreeSlots);
 
 router.get('/api/v1/lfg/list', lfgCtrl.getLfgList);
+router.get('/api/v1/lfg/:id', lfgCtrl.getLfgDetail);
 router.post('/api/v1/lfg', userAuth(), lfgCtrl.publishLfg);
 router.post('/api/v1/lfg/:id/join', userAuth(), lfgCtrl.joinLfg);
 
