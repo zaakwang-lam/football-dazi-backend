@@ -37,7 +37,7 @@ services:
   backend:
     build: ./backend
     volumes:
-      - ./backend/backend/src:/app/src                  # 源码热重载（Node.js 自动重载）
+      - ./backend/src:/app/src                  # 源码热重载（Node.js 自动重载）
       - ./backend/logs:/app/logs
       - ./backend/certs:/app/certs
     container_name: football-backend
