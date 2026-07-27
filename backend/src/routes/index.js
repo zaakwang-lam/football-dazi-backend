@@ -32,6 +32,8 @@ router.post('/api/v1/payment/refund', userAuth(), orderCtrl.applyRefund);
 router.get('/api/v1/courts/nearby', courtCtrl.getNearbyCourts);
 router.get('/api/v1/courts/:id', courtCtrl.getCourtDetail);
 router.get('/api/v1/courts/:id/schedule', courtCtrl.getCourtSchedule);
+router.get('/api/v1/courts/:id/free-slots', courtCtrl.getFreeSlots);
+router.post('/api/v1/courts/:id/free-slots', userAuth(), courtCtrl.publishFreeSlots);
 
 router.get('/api/v1/lfg/list', lfgCtrl.getLfgList);
 router.post('/api/v1/lfg', userAuth(), lfgCtrl.publishLfg);
@@ -42,12 +44,19 @@ router.post('/api/v1/teams', userAuth(), teamCtrl.createTeam);
 router.get('/api/v1/teams/:id', teamCtrl.getTeamDetail);
 router.post('/api/v1/teams/:id/checkin', userAuth(), teamCtrl.checkin);
 
+// ===== C 端用户补充接口（注册分支、附近球场）=====
+router.get('/api/user/profile', userAuth(), authCtrl.getUserProfile);
+router.post('/api/user/register-role', userAuth(), authCtrl.registerRole);
+
 // ===== 管理员接口 =====
 router.get('/api/admin/profile', adminAuth(), authCtrl.getAdminProfile);
 router.post('/api/admin/logout', adminAuth(), authCtrl.logout);
 
 router.get('/api/admin/courts', adminAuth(), courtCtrl.adminListCourts);
+router.get('/api/admin/courts/:id', adminAuth(), courtCtrl.adminGetCourtDetail);
 router.post('/api/admin/courts', adminAuth(['super_admin', 'court_admin']), courtCtrl.adminCreateCourt);
+router.put('/api/admin/courts/:id', adminAuth(['super_admin', 'court_admin']), courtCtrl.adminUpdateCourt);
+router.delete('/api/admin/courts/:id', adminAuth(['super_admin', 'court_admin']), courtCtrl.adminDeleteCourt);
 router.post('/api/admin/courts/:id/audit', adminAuth(['super_admin']), courtCtrl.auditCourt);
 
 router.get('/api/admin/dashboard/overview', adminAuth(['super_admin', 'ops']), dashCtrl.getOverview);

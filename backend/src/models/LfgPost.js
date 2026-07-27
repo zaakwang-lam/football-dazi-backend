@@ -6,7 +6,7 @@ module.exports = (sequelize) => {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     userId: { type: DataTypes.INTEGER, allowNull: false, field: 'user_id' },
     teamId: { type: DataTypes.INTEGER, field: 'team_id' },
-    type: { type: DataTypes.ENUM('sub', 'war', 'join'), allowNull: false },
+    type: { type: DataTypes.ENUM('sub', 'war'), allowNull: false },  // sub=凑人(找人顶,参与者为个人) / war=约战(球队vs球队)
     title: { type: DataTypes.STRING(64) },
     location: { type: DataTypes.STRING(128) },
     playTime: { type: DataTypes.DATE, field: 'play_time' },
@@ -14,7 +14,7 @@ module.exports = (sequelize) => {
     level: { type: DataTypes.STRING(32) },
     contact: { type: DataTypes.STRING(64) },
     description: { type: DataTypes.TEXT },
-    status: { type: DataTypes.ENUM('open', 'closed', 'full'), defaultValue: 'open' },
+    status: { type: DataTypes.ENUM('open', 'closed', 'full', 'finished'), defaultValue: 'open' },  // finished=已失效(比赛日结束,不再展示)
     joinedCount: { type: DataTypes.INTEGER, defaultValue: 0, field: 'joined_count' }
   }, {
     tableName: 'lfg_posts'

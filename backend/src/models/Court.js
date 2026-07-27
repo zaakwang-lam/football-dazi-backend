@@ -14,6 +14,7 @@ module.exports = (sequelize) => {
     price: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
     openTime: { type: DataTypes.TIME, field: 'open_time' },
     closeTime: { type: DataTypes.TIME, field: 'close_time' },
+    surfaceType: { type: DataTypes.ENUM('人工草地', '天然草地', '硬地'), defaultValue: '人工草地', field: 'surface_type' },  // 场地性质
     images: { type: DataTypes.JSON },
     tags: { type: DataTypes.JSON },
     description: { type: DataTypes.TEXT },

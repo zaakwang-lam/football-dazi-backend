@@ -98,6 +98,10 @@ async function start() {
       logger.info(`📍 端口: ${config.port}`);
       logger.info(`🌍 环境: ${config.env}`);
       logger.info(`📖 API 文档: http://localhost:${config.port}/api-docs`);
+
+      // 启动自动失效 cron
+      const { startAutoExpireCron } = require('./scripts/auto-expire');
+      startAutoExpireCron();
     });
   } catch (err) {
     logger.error('启动失败:', err);

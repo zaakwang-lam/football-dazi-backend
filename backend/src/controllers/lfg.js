@@ -11,8 +11,8 @@ const { Op } = require('sequelize');
 async function getLfgList(req, res) {
   const { type, district, page = 1, pageSize = 10 } = req.query;
 
-  const where = { status: { [Op.in]: ['open', 'full'] } };
-  if (type && type !== 'all') where.type = type;
+  const where = { status: { [Op.in]: ['open', 'full'] } };  // 不显示 closed/finished
+  if (type && type !== 'all') where.type = type;  // 兼容 'sub' / 'war'
 
   const { rows, count } = await LfgPost.findAndCountAll({
     where,

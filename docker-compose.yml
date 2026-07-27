@@ -36,6 +36,10 @@ services:
   # ========== 后端 API ==========
   backend:
     build: ./backend
+    volumes:
+      - ./backend/backend/src:/app/src                  # 源码热重载（Node.js 自动重载）
+      - ./backend/backend/package.json:/app/package.json
+      - ./backend/backend/node_modules:/app/node_modules
     container_name: football-backend
     restart: always
     depends_on:
@@ -86,6 +90,11 @@ services:
   # ========== 后台管理 Web（Vue3 SPA） ==========
   admin-web:
     build: ./admin-web
+    volumes:
+      - ./admin-web/src:/app/src                      # 源码热重载（Vite HMR）
+      - ./admin-web/index.html:/app/index.html
+      - ./admin-web/package.json:/app/package.json
+      - ./admin-web/node_modules:/app/node_modules
     container_name: football-admin-web
     restart: always
     depends_on:
