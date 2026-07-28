@@ -257,6 +257,13 @@ async function getMyLfgPosts(req, res) {
 }
 
 async function getLfgDetail(req, res) {
+  const { id } = req.params;
+
+  const post = await LfgPost.findByPk(id, {
+    include: [
+      { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'] },
+      { model: LfgJoin, as: 'joins', attributes: ['id', 'userId', 'status'] }
+    ]
   });
 
   if (!post) {
