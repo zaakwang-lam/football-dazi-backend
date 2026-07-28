@@ -51,6 +51,7 @@ router.get('/api/user/profile', userAuth(), authCtrl.getUserProfile);
 router.post('/api/user/register-role', userAuth(), authCtrl.registerRole);
 router.get('/api/user/me/courts', userAuth(), authCtrl.getMyCourts);  // 我的球场列表（2026-07-28 新增）
 router.get('/api/user/me/teams', userAuth(), authCtrl.getMyTeams);    // 我的球队列表（2026-07-28 新增）
+router.get('/api/user/me/lfg-posts', userAuth(), lfgCtrl.getMyLfgPosts);  // 我的组队列表（2026-07-28 新增）
 
 // ===== 管理员接口 =====
 router.get('/api/admin/profile', adminAuth(), authCtrl.getAdminProfile);

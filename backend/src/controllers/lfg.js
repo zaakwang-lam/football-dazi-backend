@@ -181,14 +181,82 @@ async function quitLfg(req, res) {
  * GET /api/v1/lfg/:id
  * 凑人/约战详情
  */
-async function getLfgDetail(req, res) {
-  const { id } = req.params;
+/**
+ * GET /api/user/me/lfg-posts?type=created|joined|all
+ * 「我的」-我发起的/我加入的 组队列表（2026-07-28 新增）
+ * type:
+ *   - created: 仅作为发起者 (LfgPost.userId = userId)
+ *   - joined: 仅作为参与者 (LfgJoin.userId = userId 且 status != withdrawn)
+ *   - all（默认）: created + joined 合并
+ */
+async function getMyLfgPosts(req, res) {
+  const userId = req.user.id;
+  const type = req.query.type || 'all';
 
-  const post = await LfgPost.findByPk(id, {
-    include: [
-      { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'] },
-      { model: LfgJoin, as: 'joins', attributes: ['id', 'userId', 'status'] }
-    ]
+  let posts = [];
+
+  if (type === 'created' || type === 'all') {
+    // 我发起的
+    const createdPosts = await LfgPost.findAll({
+      where: { userId },
+      include: [
+        { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'] }
+      ],
+      order: [['created_at', 'DESC']],
+      limit: 100
+    });
+    posts = posts.concat(createdPosts.map(p => ({ ...p.toJSON(), _role: 'creator' })));
+  }
+
+  if (type === 'joined' || type === 'all') {
+    // 我加入的：查 LfgJoin，再连 LfgPost
+    const joins = await LfgJoin.findAll({
+      where: { userId, status: { [Op.ne]: 'withdrawn' } },
+      include: [{
+        model: LfgPost,
+        as: 'post',
+        include: [
+          { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'] }
+        ]
+      }],
+      order: [['created_at', 'DESC']],
+      limit: 100
+    });
+    // 去重（同一 post 可能不允许重复 join，但保险起见）
+    const seen = new Set(posts.map(p => p.id));
+    const joinedPosts = joins
+      .filter(j => j.post && !seen.has(j.post.id))
+      .map(j => ({ ...j.post.toJSON(), _role: 'joiner' }));
+    posts = posts.concat(joinedPosts);
+  }
+
+  // 格式化返回字段（与 getLfgList 一致）
+  const list = posts.map(p => ({
+    id: p.id,
+    type: p.type,
+    title: p.title,
+    matchTypes: p.matchTypes || [],
+    location: p.location,
+    fee: p.fee !== null && p.fee !== undefined ? parseFloat(p.fee) : null,
+    playTime: p.playTime,
+    needCount: p.needCount,
+    joinedCount: p.joinedCount || 0,
+    level: p.level,
+    contact: p.contact,
+    description: p.description,
+    status: p.status,
+    publisher: p.publisher,
+    role: p._role,  // creator / joiner，区分发起 vs 加入
+    createdAt: p.createdAt
+  }));
+
+  res.json(success({
+    list,
+    total: list.length
+  }));
+}
+
+async function getLfgDetail(req, res) {
   });
 
   if (!post) {
@@ -220,5 +288,6 @@ module.exports = {
   getLfgDetail,
   publishLfg,
   joinLfg,
-  quitLfg
+  quitLfg,
+  getMyLfgPosts  // 2026-07-28 新增
 };
