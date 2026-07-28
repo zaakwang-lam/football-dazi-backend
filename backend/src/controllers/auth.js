@@ -370,6 +370,50 @@ async function getMyCourts(req, res) {
   }));
 }
 
+/**
+ * 获取当前用户已加入的球队列表（2026-07-28 新增）
+ * 用于「我的-我的球队」inline 展示
+ */
+async function getMyTeams(req, res) {
+  const userId = req.user.id;
+  const { Team, TeamMember } = require('../models');
+
+  // 查询用户作为成员的球队（status=1: 正常成员，0: 退出）
+  const memberships = await TeamMember.findAll({
+    where: { userId, status: 1 },
+    include: [{
+      model: Team,
+      as: 'team',
+      attributes: ['id', 'name', 'logo', 'district', 'motto', 'memberCount', 'attendance', 'wins', 'draws', 'losses', 'recruitment', 'level', 'founded']
+    }]
+  });
+
+  const list = memberships
+    .filter(m => m.team)  // 过滤球队被删除的情况
+    .map(m => ({
+      id: m.team.id,
+      name: m.team.name,
+      logo: m.team.logo,
+      district: m.team.district,
+      motto: m.team.motto,
+      memberCount: m.team.memberCount,
+      attendance: m.team.attendance,
+      wins: m.team.wins,
+      draws: m.team.draws,
+      losses: m.team.losses,
+      recruitment: m.team.recruitment,
+      level: m.team.level,
+      founded: m.team.founded,
+      role: m.role,  // 成员角色: captain / member
+      joinedAt: m.createdAt
+    }));
+
+  res.json(success({
+    list,
+    total: list.length
+  }));
+}
+
 module.exports = {
   adminLogin,
   refreshToken,
@@ -377,6 +421,7 @@ module.exports = {
   registerRole,
   getUserProfile,
   getMyCourts,
+  getMyTeams,  // 我的球队列表（2026-07-28 新增）
   getAdminProfile,
   logout
 };
