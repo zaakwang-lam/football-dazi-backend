@@ -181,8 +181,45 @@ async function registerRole(req, res) {
     if (!courtInfo || !courtInfo.name || !courtInfo.address || !courtInfo.type) {
       throw new BizError(ErrorCode.PARAM_INVALID, '请填写球场名称、地址、类型');
     }
-    if (!courtInfo.longitude || !courtInfo.latitude) {
-      throw new BizError(ErrorCode.PARAM_INVALID, '请提供球场坐标（可从腾讯地图选点获取）');
+    // 行政区必填（2026-07-28 新增）
+    const ALLOWED_DISTRICTS = ['天河', '海珠', '越秀', '荔湾', '白云', '黄埔', '番禺', '花都', '南沙', '从化', '增城'];
+    if (!courtInfo.district || !ALLOWED_DISTRICTS.includes(courtInfo.district)) {
+      throw new BizError(ErrorCode.PARAM_INVALID, `请选择正确的行政区（${ALLOWED_DISTRICTS.join('/')}）`);
+    }
+    // 经纬度选填（2026-07-28 改为选填，因前端暂未接入地图 SDK）
+    if (courtInfo.longitude && courtInfo.latitude) {
+      // 校验范围
+      const lng = Number(courtInfo.longitude);
+      const lat = Number(courtInfo.latitude);
+      if (isNaN(lng) || isNaN(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90) {
+        throw new BizError(ErrorCode.PARAM_INVALID, '经纬度格式不正确');
+      }
+    }
+    // 场地性质多选校验（2026-07-28 新增）
+    const ALLOWED_SURFACES = ['人工草地', '天然草地', '硬地'];
+    if (courtInfo.surfaceTypes && !Array.isArray(courtInfo.surfaceTypes)) {
+      throw new BizError(ErrorCode.PARAM_INVALID, '场地性质必须是数组');
+    }
+    const surfaceTypes = (courtInfo.surfaceTypes && courtInfo.surfaceTypes.length > 0)
+      ? courtInfo.surfaceTypes.filter(s => ALLOWED_SURFACES.includes(s))
+      : [courtInfo.surfaceType || '人工草地'];  // 向后兼容旧字段
+
+    // 开放时间多时段校验（2026-07-28 新增）
+    let openHours = null;
+    if (courtInfo.openHours && typeof courtInfo.openHours === 'object') {
+      const ALLOWED_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+      openHours = {};
+      for (const day of ALLOWED_DAYS) {
+        const slots = courtInfo.openHours[day];
+        if (Array.isArray(slots) && slots.length > 0) {
+          openHours[day] = slots.map(s => ({
+            start: String(s.start || '').slice(0, 5),
+            end: String(s.end || '').slice(0, 5)
+          })).filter(s => s.start && s.end);
+        }
+      }
+      // 至少有一天有数据
+      if (Object.keys(openHours).length === 0) openHours = null;
     }
 
     // 1. 创建场地记录（status=2 审核中）
@@ -192,13 +229,16 @@ async function registerRole(req, res) {
       ownerId: userId,
       type: courtInfo.type,                // '11人制' / '7人制' / '5人制'
       address: courtInfo.address,
-      longitude: courtInfo.longitude,
-      latitude: courtInfo.latitude,
+      district: courtInfo.district,        // 行政区（2026-07-28 新增）
+      longitude: courtInfo.longitude ? Number(courtInfo.longitude) : null,
+      latitude: courtInfo.latitude ? Number(courtInfo.latitude) : null,
       phone: courtInfo.phone || '',
       price: courtInfo.price || 0,
       openTime: courtInfo.openTime || '08:00:00',
       closeTime: courtInfo.closeTime || '22:00:00',
-      surfaceType: courtInfo.surfaceType || '人工草地',  // 人工草地/天然草地/硬地
+      surfaceType: surfaceTypes[0] || '人工草地',  // 旧字段保留（取多选第一个作 fallback）
+      surfaceTypes: surfaceTypes,          // 场地性质多选（2026-07-28 新增）
+      openHours: openHours,                // 按周多时段（2026-07-28 新增）
       description: courtInfo.description || '',
       status: 2  // 2=审核中
     });
@@ -257,11 +297,15 @@ async function getUserProfile(req, res) {
       id: court.id,
       name: court.name,
       address: court.address,
+      district: court.district,             // 行政区（2026-07-28 新增）
       type: court.type,
       surfaceType: court.surfaceType,
+      surfaceTypes: court.surfaceTypes || [],  // 场地性质多选（2026-07-28 新增）
       status: court.status,  // 1=营业 0=休息 2=审核中
       openTime: court.openTime,
-      closeTime: court.closeTime
+      closeTime: court.closeTime,
+      openHours: court.openHours || null,   // 按周多时段（2026-07-28 新增）
+      createdAt: court.createdAt
     }
   }));
 }
@@ -281,12 +325,58 @@ async function logout(req, res) {
   res.json(success(null, '已登出'));
 }
 
+/**
+ * GET /api/user/me/courts
+ * 获取当前用户（球场方）已审核通过的球场列表
+ * 按 createdAt DESC 排序（宏哥原话：按加入时间倒序）
+ * （2026-07-28 新增）
+ */
+async function getMyCourts(req, res) {
+  const userId = req.user.id;
+
+  const { Court } = require('../models');
+
+  // 同一 owner_id 可能有多条球场记录（如球场方运营多个场地），全部返回
+  const courts = await Court.findAll({
+    where: {
+      ownerId: userId,
+      status: 1  // 仅已审核通过的（1=营业中）
+    },
+    order: [['created_at', 'DESC']]
+  });
+
+  res.json(success({
+    list: courts.map(c => ({
+      id: c.id,
+      name: c.name,
+      type: c.type,
+      district: c.district,                 // 行政区
+      address: c.address,
+      longitude: c.longitude ? parseFloat(c.longitude) : null,
+      latitude: c.latitude ? parseFloat(c.latitude) : null,
+      phone: c.phone,
+      price: parseFloat(c.price),
+      surfaceType: c.surfaceType,           // 场地性质（旧字段，fallback）
+      surfaceTypes: c.surfaceTypes || [],   // 场地性质多选
+      openTime: c.openTime,
+      closeTime: c.closeTime,
+      openHours: c.openHours || null,       // 按周多时段
+      description: c.description,
+      status: c.status,
+      rating: parseFloat(c.rating),
+      createdAt: c.createdAt
+    })),
+    total: courts.length
+  }));
+}
+
 module.exports = {
   adminLogin,
   refreshToken,
   userLogin,
-  getUserProfile,
   registerRole,
+  getUserProfile,
+  getMyCourts,
   getAdminProfile,
   logout
 };

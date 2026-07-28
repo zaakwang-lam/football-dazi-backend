@@ -39,6 +39,7 @@ router.get('/api/v1/lfg/list', lfgCtrl.getLfgList);
 router.get('/api/v1/lfg/:id', lfgCtrl.getLfgDetail);
 router.post('/api/v1/lfg', userAuth(), lfgCtrl.publishLfg);
 router.post('/api/v1/lfg/:id/join', userAuth(), lfgCtrl.joinLfg);
+router.post('/api/v1/lfg/:id/quit', userAuth(), lfgCtrl.quitLfg);  // 退出组队（2026-07-28 新增）
 
 router.get('/api/v1/teams', teamCtrl.getTeamList);
 router.post('/api/v1/teams', userAuth(), teamCtrl.createTeam);
@@ -48,6 +49,7 @@ router.post('/api/v1/teams/:id/checkin', userAuth(), teamCtrl.checkin);
 // ===== C 端用户补充接口（注册分支、附近球场）=====
 router.get('/api/user/profile', userAuth(), authCtrl.getUserProfile);
 router.post('/api/user/register-role', userAuth(), authCtrl.registerRole);
+router.get('/api/user/me/courts', userAuth(), authCtrl.getMyCourts);  // 我的球场列表（2026-07-28 新增）
 
 // ===== 管理员接口 =====
 router.get('/api/admin/profile', adminAuth(), authCtrl.getAdminProfile);
