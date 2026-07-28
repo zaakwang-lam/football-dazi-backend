@@ -6,6 +6,8 @@
       "database": "football_dazi",
       "host": "127.0.0.1",
       "dialect": "mysql"
-    }
+    },
+    "migrations-path": "./migrations",
+    "seeders-path": "./seeders"
   }
 }
