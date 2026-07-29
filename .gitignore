@@ -66,3 +66,7 @@ package-lock.json.bak
 # Docker
 **/.dockerignore
 docs/
+
+# 备份文件（生产事故保护）
+*.bak-*
+backend/backend/
