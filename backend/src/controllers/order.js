@@ -1,13 +1,21 @@
 // src/controllers/order.js
-// 订单 + 支付控制器
-const { Order, Court, CourtSchedule, User, PaymentOrder, PaymentRefund } = require('../models');
+// 订单 + 支付控制器（2026-07-29 改为免支付预订：创建即成单 + 推送球场方）
+const { Order, Court, CourtSchedule, User } = require('../models');
 const wechatPay = require('../services/wechat-pay');
+const wechatMsg = require('../services/wechat-msg');
 const { success, fail, BizError, ErrorCode } = require('../utils/response');
 const logger = require('../utils/logger');
 
 /**
  * POST /api/v1/orders
- * 创建订单（C 端）
+ * 创建订单（C 端，2026-07-29 改为免支付：立即成单）
+ *
+ * 流程：
+ * 1. 验证排期可订
+ * 2. 创建订单（status=booked，无需支付）
+ * 3. 锁排期（status=booked）
+ * 4. 异步推送球场方微信
+ * 5. 返回订单详情
  */
 async function createOrder(req, res) {
   const { courtId, scheduleId, contactName, contactPhone, remark } = req.body;
@@ -20,7 +28,10 @@ async function createOrder(req, res) {
   // 验证排期
   const schedule = await CourtSchedule.findOne({
     where: { id: scheduleId, courtId },
-    include: [{ model: Court, as: 'court' }]
+    include: [
+      { model: Court, as: 'court' },
+      { model: require('../models').Court }
+    ]
   });
 
   if (!schedule) {
@@ -33,33 +44,76 @@ async function createOrder(req, res) {
     throw new BizError(ErrorCode.CONFLICT, '该时段已关闭');
   }
 
-  // 创建订单 + 锁排期
+  // 创建订单（直接成 booked）
   const order = await Order.create({
     orderNo: wechatPay.generateOrderNo('O'),
     userId,
     courtId,
     scheduleId,
     amount: schedule.price,
-    status: 'pending',
+    status: 'booked',  // 2026-07-29 改动：先 booked，通知后再待确认
     contactName,
     contactPhone,
-    remark: remark || ''
+    remark: remark || '',
+    notifyStatus: 'pending'
   });
 
-  // 临时锁定排期（5 分钟内未支付释放）
+  // 锁定排期
+  schedule.status = 'booked';
   schedule.orderId = order.id;
   await schedule.save();
+
+  logger.info(`订单 ${order.orderNo} 创建成功（免支付预订）`);
+
+  // 异步推送球场方（不阻塞返回，失败仅写日志）
+  setImmediate(async () => {
+    try {
+      // 关联查球场方的 openid
+      const owner = await User.findOne({
+        where: { courtId: order.courtId, role: 'court' },
+        attributes: ['id', 'openid', 'nickname']
+      });
+      const ownerOpenid = owner ? owner.openid : null;
+
+      const result = await wechatMsg.notifyCourtOwner(
+        {
+          ...order.toJSON(),
+          court: schedule.court,
+          schedule: { date: schedule.date, timeSlot: schedule.timeSlot }
+        },
+        ownerOpenid
+      );
+
+      // 写回推送状态
+      const update = { notifyTime: new Date() };
+      if (result.skipped) {
+        update.notifyStatus = result.reason === 'no_owner_openid' ? 'skipped' : 'skipped';
+      } else if (result.ok) {
+        update.notifyStatus = 'sent';
+      } else {
+        update.notifyStatus = 'failed';
+        update.notifyErrcode = String(result.errcode || result.error || 'unknown');
+      }
+      await order.update(update);
+      logger.info(`订单 ${order.orderNo} 推送结果: ${update.notifyStatus}${update.notifyErrcode ? ' (' + update.notifyErrcode + ')' : ''}`);
+    } catch (e) {
+      logger.error(`异步推送异常 (订单 ${order.orderNo}):`, e);
+      await order.update({ notifyStatus: 'failed', notifyTime: new Date() });
+    }
+  });
 
   res.json(success({
     orderId: order.id,
     orderNo: order.orderNo,
-    amount: parseFloat(order.amount)
+    amount: parseFloat(order.amount),
+    status: 'booked'
   }));
 }
 
 /**
  * POST /api/v1/payment/unified-order
- * 调起微信支付
+ * 调起微信支付（保留接口，未来需支付时启用）
+ * 2026-07-29：当前阶段免支付，但保留接口以防回退
  */
 async function payOrder(req, res) {
   const { orderId, openid } = req.body;
@@ -82,7 +136,7 @@ async function payOrder(req, res) {
 
   // 调微信统一下单
   const amount = parseFloat(order.amount);
-  const totalFee = Math.round(amount * 100);  // 元 → 分
+  const totalFee = Math.round(amount * 100);
   const body = `${order.court.name} ${order.contactName}`;
 
   const payParams = await wechatPay.unifiedOrder({
@@ -95,6 +149,7 @@ async function payOrder(req, res) {
   });
 
   // 保存支付订单记录
+  const { PaymentOrder } = require('../models');
   await PaymentOrder.create({
     orderNo: order.orderNo,
     userId,
@@ -116,7 +171,7 @@ async function payOrder(req, res) {
 
 /**
  * POST /api/payment/notify
- * 微信支付回调（无鉴权）
+ * 微信支付回调（无鉴权，保留备用）
  */
 async function paymentNotify(req, res) {
   const xml = req.body;
@@ -128,7 +183,6 @@ async function paymentNotify(req, res) {
 
     logger.info(`支付回调: out_trade_no=${result.out_trade_no}, result_code=${result.result_code}`);
 
-    // 验签
     if (!require('../utils/wechat-sign').verifySign(result)) {
       logger.warn('支付回调验签失败');
       return res.send(require('../utils/wechat-sign').objToXml({
@@ -138,7 +192,7 @@ async function paymentNotify(req, res) {
     }
 
     if (result.result_code === 'SUCCESS' && result.return_code === 'SUCCESS') {
-      // 幂等：通过 transaction_id 去重
+      const { PaymentOrder } = require('../models');
       const existed = await PaymentOrder.findOne({ where: { transactionId: result.transaction_id } });
       if (existed && existed.status === 'paid') {
         logger.info(`订单 ${result.out_trade_no} 已处理，跳过`);
@@ -148,7 +202,6 @@ async function paymentNotify(req, res) {
         }));
       }
 
-      // 更新订单
       const order = await Order.findOne({ where: { orderNo: result.out_trade_no } });
       if (order) {
         order.status = 'paid';
@@ -158,7 +211,6 @@ async function paymentNotify(req, res) {
         order.payTime = new Date();
         await order.save();
 
-        // 更新排期
         if (order.scheduleId) {
           await CourtSchedule.update(
             { status: 'booked' },
@@ -166,7 +218,6 @@ async function paymentNotify(req, res) {
           );
         }
 
-        // 更新支付订单
         await PaymentOrder.update(
           {
             status: 'paid',
@@ -195,7 +246,7 @@ async function paymentNotify(req, res) {
 
 /**
  * POST /api/v1/payment/refund
- * 申请退款
+ * 申请退款（保留）
  */
 async function applyRefund(req, res) {
   const { orderId, reason, amount } = req.body;
@@ -209,13 +260,11 @@ async function applyRefund(req, res) {
     throw new BizError(ErrorCode.CONFLICT, '订单未支付，无法退款');
   }
 
-  // 退款金额（默认全额）
   const refundAmount = amount ? parseFloat(amount) : parseFloat(order.payAmount);
   if (refundAmount > parseFloat(order.payAmount)) {
     throw new BizError(ErrorCode.PARAM_INVALID, '退款金额超过实付金额');
   }
 
-  // 调微信退款
   const refundRes = await wechatPay.refund({
     outTradeNo: order.orderNo,
     outRefundNo: wechatPay.generateOrderNo('R'),
@@ -224,7 +273,7 @@ async function applyRefund(req, res) {
     refundDesc: reason || '用户取消'
   });
 
-  // 保存退款记录
+  const { PaymentRefund } = require('../models');
   const refund = await PaymentRefund.create({
     refundNo: refundRes.outRefundNo,
     refundId: refundRes.refundId,
@@ -272,6 +321,7 @@ async function listMyOrders(req, res) {
       courtType: o.court?.type,
       amount: parseFloat(o.amount),
       status: o.status,
+      notifyStatus: o.notifyStatus,
       createdAt: o.createdAt
     })),
     total: count,
@@ -310,6 +360,8 @@ async function getOrderDetail(req, res) {
     contactPhone: order.contactPhone,
     payTime: order.payTime,
     createdAt: order.createdAt,
+    notifyStatus: order.notifyStatus,
+    notifyTime: order.notifyTime,
     court: {
       id: order.court?.id,
       name: order.court?.name,
