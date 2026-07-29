@@ -29,7 +29,7 @@ module.exports = (sequelize) => {
       comment: '球场方推送状态：pending=待推/sent=已送达/failed=失败/skipped=跳过'
     },
     notifyTime: { type: DataTypes.DATE, field: 'notify_time', comment: '推送完成时间' },
-    notifyErrcode: { type: DataTypes.STRING(16), field: 'notify_errcode', comment: '微信 API 返回 errcode（失败时记录）' }
+    notifyErrcode: { type: DataTypes.STRING(32), field: 'notify_errcode', comment: '微信 API 返回 errcode（失败时记录）' }
   }, {
     tableName: 'orders'
   });
