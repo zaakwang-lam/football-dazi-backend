@@ -60,6 +60,7 @@ services:
       WX_MCHID: ${WX_MCHID}
       WX_PAY_KEY: ${WX_PAY_KEY}
       WX_NOTIFY_URL: ${WX_NOTIFY_URL}
+      WX_TEMPLATE_ID_BOOK: ${WX_TEMPLATE_ID_BOOK}
     ports:
       - "3000:3000"
     healthcheck:
