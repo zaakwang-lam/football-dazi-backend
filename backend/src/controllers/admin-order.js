@@ -32,7 +32,7 @@ async function listOrders(req, res) {
     where,
     include: [
       { model: Court, as: 'court', attributes: ['id', 'name', 'type', 'phone'] },
-      { model: CourtSchedule, as: 'schedule', attributes: ['id', 'date', 'time_slot'] }
+      { model: CourtSchedule, as: 'schedule', attributes: ['id', 'date', 'timeSlot'] }
     ],
     order: [['created_at', 'DESC']],
     limit: Number(pageSize),
@@ -75,7 +75,7 @@ async function listOrders(req, res) {
       schedule: o.schedule ? {
         id: o.schedule.id,
         date: o.schedule.date,
-        timeSlot: o.schedule.time_slot
+        timeSlot: o.schedule.timeSlot
       } : null
     })),
     total: count,
@@ -126,7 +126,7 @@ async function getDetail(req, res) {
     court: order.court,
     schedule: order.schedule ? {
       date: order.schedule.date,
-      timeSlot: order.schedule.time_slot
+      timeSlot: order.schedule.timeSlot
     } : null
   }));
 }
