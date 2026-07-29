@@ -5,6 +5,7 @@ const router = express.Router();
 
 // 鉴权
 const authCtrl = require('../controllers/auth');
+const adminOrderCtrl = require('../controllers/admin-order');
 const { adminAuth, userAuth } = require('../middlewares/auth');
 
 // 业务
@@ -67,5 +68,11 @@ router.post('/api/admin/courts/:id/audit', adminAuth(['super_admin']), courtCtrl
 router.get('/api/admin/dashboard/overview', adminAuth(['super_admin', 'ops']), dashCtrl.getOverview);
 router.get('/api/admin/dashboard/revenue', adminAuth(['super_admin', 'ops']), dashCtrl.getRevenue);
 router.get('/api/admin/dashboard/courts', adminAuth(['super_admin', 'ops']), dashCtrl.getTopCourts);
+
+// 后台订单（球场方 + 运营）（2026-07-29 新增）
+router.get('/api/admin/orders', adminAuth(), adminOrderCtrl.listOrders);
+router.get('/api/admin/orders/:id', adminAuth(), adminOrderCtrl.getDetail);
+router.post('/api/admin/orders/:id/accept', adminAuth(), adminOrderCtrl.acceptOrder);
+router.post('/api/admin/orders/:id/cancel', adminAuth(), adminOrderCtrl.cancelOrder);
 
 module.exports = router;

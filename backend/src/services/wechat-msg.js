@@ -119,7 +119,7 @@ async function notifyCourtOwner(order, ownerOpenid) {
     const result = await sendSubscribeMessage({
       touser: ownerOpenid,
       templateId,
-      page: `pages/admin/orders/detail?id=${order.orderNo}`, // 球场方端订单详情页
+      page: `pages/court-orders/list?orderNo=${order.orderNo}`, // 2026-07-29: 跳转球场方小程序订单页
       data
     });
     return result;
