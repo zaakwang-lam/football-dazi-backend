@@ -343,14 +343,27 @@ async function auditCourt(req, res) {
   if (!court) {
     throw new BizError(ErrorCode.NOT_FOUND, '场地不存在');
   }
+  if (court.status !== 2) {
+    throw new BizError(ErrorCode.CONFLICT, `只能审核待审核场地（当前状态=${court.status}）`);
+  }
 
-  court.status = approved ? 1 : 0;
+  court.status = approved ? 1 : 3;  // 2026-07-30: 拒绝改为 3（原来是 0=休息，语义冲突）
+  // 拒绝理由存到 description 末尾（避免数据库 schema 变更）
+  if (!approved && reason) {
+    const oldDesc = court.description || '';
+    const auditTag = `[REJECTED] ${reason}`;
+    court.description = oldDesc ? `${oldDesc}\n\n${auditTag}` : auditTag;
+  } else if (approved) {
+    // 通过时清除旧拒绝标记
+    const oldDesc = court.description || '';
+    court.description = oldDesc.replace(/\n\n\[REJECTED\][^\n]*/, '').replace(/^\[REJECTED\][^\n]*\n*/, '');
+  }
   await court.save();
 
   res.json(success({
     id: court.id,
     status: court.status,
-    message: approved ? '审核通过' : `已拒绝: ${reason || '无'}`
+    message: approved ? '审核通过' : `已拒绝: ${reason || '无理由'}`
   }));
 }
 
