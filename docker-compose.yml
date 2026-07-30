@@ -54,7 +54,7 @@ services:
       DB_USER: football
       DB_PASSWORD: ${MYSQL_PASSWORD:-Football@2026}
       JWT_SECRET: ${JWT_SECRET:-please-change-me-in-prod}
-      JWT_EXPIRES_IN: 7d
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-30d}  # 2026-07-30 改为 30d（原来 2h 太短，7d 也不够）
       WX_APPID: ${WX_APPID}
       WX_SECRET: ${WX_SECRET}
       WX_MCHID: ${WX_MCHID}
