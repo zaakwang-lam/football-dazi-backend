@@ -16,11 +16,18 @@ export const courtApi = {
 
 export const dashboardApi = {
   overview: () => request.get('/admin/dashboard/overview'),
-  revenue: () => request.get('/admin/dashboard/revenue'),
-  topCourts: () => request.get('/admin/dashboard/courts')
+  revenue: (params) => request.get('/admin/dashboard/revenue', { params }),
+  topCourts: (params) => request.get('/admin/dashboard/courts', { params })
 };
 
 export const userApi = {
   list: (params) => request.get('/admin/users', { params }),
   detail: (id) => request.get(`/admin/users/${id}`)
+};
+
+export const orderApi = {
+  list: (params) => request.get('/admin/orders', { params }),
+  detail: (id) => request.get(`/admin/orders/${id}`),
+  accept: (id) => request.post(`/admin/orders/${id}/accept`),
+  cancel: (id, data) => request.post(`/admin/orders/${id}/cancel`, data)
 };

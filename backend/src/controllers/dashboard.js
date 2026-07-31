@@ -22,11 +22,11 @@ async function getOverview(req, res) {
     newUsers
   ] = await Promise.all([
     User.count(),
-    Order.count({ where: { createdAt: { [Op.gte]: today }, status: { [Op.ne]: 'canceled' } } }),
-    Order.sum('amount', { where: { createdAt: { [Op.gte]: today }, status: 'paid' } }),
+    Order.count({ where: { created_at: { [Op.gte]: today }, status: { [Op.ne]: 'canceled' } } }),
+    Order.sum('amount', { where: { created_at: { [Op.gte]: today }, status: 'paid' } }),
     Court.count({ where: { status: 1 } }),
-    LfgPost.count({ where: { createdAt: { [Op.gte]: today } } }),
-    User.count({ where: { createdAt: { [Op.gte]: today } } })
+    LfgPost.count({ where: { created_at: { [Op.gte]: today } } }),
+    User.count({ where: { created_at: { [Op.gte]: today } } })
   ]);
 
   res.json(success({
