@@ -8,7 +8,7 @@ const logger = require('../utils/logger');
 /**
  * GET /api/admin/users
  * - ops / super_admin：全量用户列表
- * - court_admin：仅能看到自己球场的用户（通过 courtId 关联）
+ * - court_admin：仅能看到自己球场的用户
  * Query 参数：
  *   role       - 过滤用户角色（user/court/admin）
  *   status     - 过滤状态（1=正常 / 0=禁用）
@@ -19,7 +19,6 @@ const logger = require('../utils/logger');
 async function listUsers(req, res) {
   const { role, status, keyword, page = 1, pageSize = 20 } = req.query;
   const where = {};
-  const include = [];
 
   const admin = req.admin;
 
@@ -28,8 +27,6 @@ async function listUsers(req, res) {
     if (!admin.courtId) {
       throw new BizError(ErrorCode.FORBIDDEN, '球场方账号未关联球场，请联系管理员');
     }
-    // 球场方用户 = courtId 为该球场的用户，或通过 openid 有过订单/组队记录的用户（这里简化为仅看 courtId 关联）
-    // 实际业务中球场方可能需要看到"通过其球场下单的用户"，这里按 courtId 关联过滤
     where.courtId = admin.courtId;
   }
 
@@ -49,8 +46,8 @@ async function listUsers(req, res) {
     where[Op.or] = [
       { nickname: { [Op.like]: `%${kw}%` } },
       { phone: { [Op.like]: `%${kw}%` } },
-      { city: { [Op.like]: `%${kw}%` }
-    }];
+      { city: { [Op.like]: `%${kw}%` } }
+    ];
   }
 
   const offset = (Number(page) - 1) * Number(pageSize);
@@ -58,21 +55,23 @@ async function listUsers(req, res) {
 
   const { rows, count } = await User.findAndCountAll({
     where,
-    include: [
-      {
-        model: Court,
-        as: 'court',
-        required: false,
-        attributes: ['id', 'name']
-      }
-    ],
     order: [['id', 'DESC']],
     limit,
     offset,
     distinct: true
   });
 
-  // 补充字段：关联球场名
+  // 补充球场名称（无 Sequelize 关联，手动查询）
+  const courtIds = [...new Set(rows.map(u => u.courtId).filter(Boolean))];
+  const courtMap = {};
+  if (courtIds.length > 0) {
+    const courts = await Court.findAll({
+      where: { id: courtIds },
+      attributes: ['id', 'name']
+    });
+    courts.forEach(c => { courtMap[c.id] = c.name; });
+  }
+
   const list = rows.map(u => {
     const json = u.toJSON();
     return {
@@ -85,7 +84,7 @@ async function listUsers(req, res) {
       level: json.level || '业余',
       role: json.role,
       courtId: json.courtId,
-      courtName: json.court ? json.court.name : null,
+      courtName: json.courtId ? (courtMap[json.courtId] || null) : null,
       status: json.status,
       createdAt: json.created_at
     };
@@ -102,23 +101,13 @@ async function listUsers(req, res) {
 
 /**
  * GET /api/admin/users/:id
- * 用户详情（仅 ops / super_admin / court_admin 可访问）
+ * 用户详情
  */
 async function getUserDetail(req, res) {
   const { id } = req.params;
   const admin = req.admin;
 
-  const user = await User.findByPk(id, {
-    include: [
-      {
-        model: Court,
-        as: 'court',
-        required: false,
-        attributes: ['id', 'name', 'phone', 'address']
-      }
-    ]
-  });
-
+  const user = await User.findByPk(id);
   if (!user) {
     throw new BizError(ErrorCode.NOT_FOUND, '用户不存在');
   }
@@ -128,6 +117,13 @@ async function getUserDetail(req, res) {
     if (user.courtId !== admin.courtId) {
       throw new BizError(ErrorCode.FORBIDDEN, '无权限查看该用户');
     }
+  }
+
+  // 查球场名称
+  let courtName = null;
+  if (user.courtId) {
+    const court = await Court.findByPk(user.courtId, { attributes: ['id', 'name'] });
+    courtName = court ? court.name : null;
   }
 
   const json = user.toJSON();
@@ -143,7 +139,7 @@ async function getUserDetail(req, res) {
     openid: json.openid || '',
     unionid: json.unionid || '',
     courtId: json.courtId,
-    courtName: json.court ? json.court.name : null,
+    courtName,
     status: json.status,
     createdAt: json.created_at,
     updatedAt: json.updated_at
@@ -175,7 +171,7 @@ async function updateUserStatus(req, res) {
   user.status = Number(status);
   await user.save();
 
-  logger.info(`[admin-users] user ${id} status updated to ${status} by admin ${req.admin.id}`);
+  logger.info(`[admin-users] user ${id} status -> ${status} by admin ${admin.id}`);
   res.json(success({ id: user.id, status: user.status }));
 }
 
