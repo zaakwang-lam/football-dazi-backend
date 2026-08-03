@@ -6,6 +6,7 @@ const router = express.Router();
 // 鉴权
 const authCtrl = require('../controllers/auth');
 const adminOrderCtrl = require('../controllers/admin-order');
+const adminUsersCtrl = require('../controllers/admin-users');
 const { adminAuth, userAuth } = require('../middlewares/auth');
 
 // 业务
@@ -74,5 +75,10 @@ router.get('/api/admin/orders', adminAuth(), adminOrderCtrl.listOrders);
 router.get('/api/admin/orders/:id', adminAuth(), adminOrderCtrl.getDetail);
 router.post('/api/admin/orders/:id/accept', adminAuth(), adminOrderCtrl.acceptOrder);
 router.post('/api/admin/orders/:id/cancel', adminAuth(), adminOrderCtrl.cancelOrder);
+
+// 后台用户管理（2026-08-04 新增 #3.1a）
+router.get('/api/admin/users', adminAuth(), adminUsersCtrl.listUsers);
+router.get('/api/admin/users/:id', adminAuth(), adminUsersCtrl.getUserDetail);
+router.put('/api/admin/users/:id/status', adminAuth(['super_admin', 'ops']), adminUsersCtrl.updateUserStatus);
 
 module.exports = router;
