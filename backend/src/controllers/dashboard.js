@@ -22,8 +22,10 @@ async function getOverview(req, res) {
     newUsers
   ] = await Promise.all([
     User.count(),
-    Order.count({ where: { created_at: { [Op.gte]: today }, status: { [Op.ne]: 'canceled' } } }),
-    Order.sum('amount', { where: { created_at: { [Op.gte]: today }, status: 'paid' } }),
+    // 今日订单: 所有今日创建的订单 (含 canceled, 不漏数) (2026-08-04 口径修正)
+    Order.count({ where: { created_at: { [Op.gte]: today } } }),
+    // 今日 GMV: 用 pay_amount (实付) + pay_time (支付时间锚) (2026-08-04 口径修正)
+    Order.sum('pay_amount', { where: { pay_time: { [Op.gte]: today }, status: { [Op.in]: ['paid', 'completed'] } } }),
     Court.count({ where: { status: 1 } }),
     LfgPost.count({ where: { created_at: { [Op.gte]: today } } }),
     User.count({ where: { created_at: { [Op.gte]: today } } })
@@ -41,10 +43,10 @@ async function getOverview(req, res) {
 
 /**
  * GET /api/admin/dashboard/revenue
- * 收入趋势（最近 30 天）
+ * 收入趋势（最近 N 天，默认 30）
  */
 async function getRevenue(req, res) {
-  const days = 30;
+  const days = Number(req.query.days) || 30;
   const start = new Date(Date.now() - days * 86400000);
 
   const data = await Order.findAll({
@@ -55,7 +57,7 @@ async function getRevenue(req, res) {
     ],
     where: {
       pay_time: { [Op.gte]: start },
-      status: 'paid'
+      status: { [Op.in]: ['paid', 'completed'] }  // 2026-08-04 口径: 含 completed (历史已支付)
     },
     group: [fn('DATE', col('pay_time'))],
     order: [[fn('DATE', col('pay_time')), 'ASC']],
@@ -78,22 +80,22 @@ async function getTopCourts(req, res) {
     attributes: [
       'courtId',
       [fn('COUNT', col('Order.id')), 'orders'],
-      [fn('SUM', col('Order.pay_amount')), 'revenue']
+      [fn('SUM', col('pay_amount')), 'revenue']
     ],
-    include: [{ model: Court, as: 'court', attributes: ['name', 'type'] }],
-    where: { status: 'paid' },
-    group: ['courtId', 'court.id', 'court.name', 'court.type'],
+    where: {
+      status: { [Op.in]: ['paid', 'completed'] }  // 2026-08-04 口径: 含 completed
+    },
+    include: [{ model: Court, as: 'court', attributes: ['name'] }],
+    group: ['courtId'],
     order: [[literal('revenue'), 'DESC']],
     limit: 10,
-    raw: true,
-    nest: true
+    raw: true
   });
 
   res.json(success(data.map(d => ({
     courtId: d.courtId,
-    name: d.court?.name,
-    type: d.court?.type,
-    orders: parseInt(d.orders),
+    name: d['court.name'],
+    orders: parseInt(d.orders || 0),
     revenue: parseFloat(d.revenue || 0)
   }))));
 }
