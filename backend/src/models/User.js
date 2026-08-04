@@ -13,6 +13,25 @@ module.exports = (sequelize) => {
     city: { type: DataTypes.STRING(32), defaultValue: '广州' },
     level: { type: DataTypes.STRING(32), defaultValue: '业余' },
     role: { type: DataTypes.ENUM('user', 'court', 'admin'), defaultValue: 'user', field: 'role' },  // user=个人 / court=球场方 / admin=管理员
+    roles: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      field: 'roles',
+      // 【2026-08-04 #22】get/set hook - 避免 findByPk 拿到字符串 vs 数组类型混乱
+      get() {
+        const raw = this.getDataValue('roles');
+        if (!raw) return [];
+        return Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : []);
+      },
+      set(val) {
+        if (!val || (Array.isArray(val) && val.length === 0)) {
+          this.setDataValue('roles', null);
+        } else {
+          // sequelize 6+ 直接传数组即可, 它会自动序列化为 JSON
+          this.setDataValue('roles', Array.isArray(val) ? val : [val]);
+        }
+      }
+    },
     courtId: { type: DataTypes.INTEGER, allowNull: true, field: 'court_id' },  // 球场方关联的场地 ID（user/court 二选一）
     status: { type: DataTypes.TINYINT, defaultValue: 1 }
   }, {

@@ -172,8 +172,11 @@ async function registerRole(req, res) {
     throw new BizError(ErrorCode.NOT_FOUND, '用户不存在');
   }
 
-  if (user.role && user.role !== 'user') {
-    throw new BizError(ErrorCode.FORBIDDEN, '已注册过，不能重复注册');
+  // 【2026-08-04 #22】支持多角色 - roles 数组
+  // 已有 roles 数组的优先; 兑底读 role 字段
+  let currentRoles = Array.isArray(user.roles) ? [...user.roles] : (user.role && user.role !== 'user' ? [user.role] : []);
+  if (currentRoles.includes(role)) {
+    throw new BizError(ErrorCode.FORBIDDEN, `已注册过 ${role} 角色`);
   }
 
   if (role === 'court') {
@@ -243,15 +246,20 @@ async function registerRole(req, res) {
       status: 2  // 2=审核中
     });
 
-    // 2. 更新用户 role + courtId
+    // 2. 更新用户 role + courtId + roles 数组
     user.role = 'court';
     user.courtId = court.id;
+    // 【2026-08-04 #22】同步 roles 数组 ('user'+'court')
+    // 注意: 必须重新赋值触发 setter, 直接 .push() 不被 sequelize 识别为 dirty
+    const courtRoles = [...new Set([...(Array.isArray(user.roles) ? user.roles : []), 'user', 'court'])];
+    user.roles = courtRoles;
     await user.save();
 
     logger.info(`球场方注册: userId=${userId}, courtId=${court.id}, name=${court.name}`);
 
     return res.json(success({
       role: 'court',
+      roles: user.roles,
       courtId: court.id,
       courtStatus: 'pending',  // 等待 admin-web 审核
       message: '球场已提交，请等待审核'
@@ -261,10 +269,14 @@ async function registerRole(req, res) {
   // 个人注册
   user.role = 'user';
   user.courtId = null;
+  // 【2026-08-04 #22】同步写 roles 数组
+  const userRoles = [...new Set([...(Array.isArray(user.roles) ? user.roles : []), 'user'])];
+  user.roles = userRoles;
   await user.save();
 
   res.json(success({
     role: 'user',
+    roles: user.roles,
     courtId: null,
     message: '个人注册成功'
   }, '注册成功'));
@@ -292,6 +304,7 @@ async function getUserProfile(req, res) {
     avatarUrl: user.avatarUrl,
     phone: user.phone,
     role: user.role,
+    roles: user.roles || [],  // 【2026-08-04 #22】多身份数组
     courtId: user.courtId,
     court: court && {
       id: court.id,
