@@ -4,6 +4,7 @@
       <el-tabs v-model="activeTab" @tab-change="onTabChange">
         <el-tab-pane label="全部" name="all" />
         <el-tab-pane label="待确认" name="pending" />
+        <el-tab-pane label="已预订" name="booked" />
         <el-tab-pane label="已支付" name="paid" />
         <el-tab-pane label="已完成" name="completed" />
         <el-tab-pane label="已取消" name="canceled" />
@@ -52,8 +53,8 @@
         </el-table-column>
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.status === 'pending'" size="small" type="primary" @click="onAccept(row)" :loading="actionLoadingId === row.id">确认</el-button>
-            <el-button v-if="row.status === 'pending'" size="small" type="danger" @click="onCancel(row)" :loading="actionLoadingId === row.id">拒绝</el-button>
+            <el-button v-if="row.status === 'booked'" size="small" type="primary" @click="onAccept(row)" :loading="actionLoadingId === row.id">确认</el-button>
+            <el-button v-if="row.status === 'booked'" size="small" type="danger" @click="onCancel(row)" :loading="actionLoadingId === row.id">拒绝</el-button>
             <el-button size="small" link @click="onDetail(row)">详情</el-button>
           </template>
         </el-table-column>
@@ -107,7 +108,8 @@ const detailVisible = ref(false);
 const currentOrder = ref(null);
 
 const statusMap = {
-  pending: '待确认',
+  pending: '待支付',
+  booked: '已预订',
   paid: '已支付',
   completed: '已完成',
   refunded: '已退款',
@@ -116,6 +118,7 @@ const statusMap = {
 
 const statusType = {
   pending: 'warning',
+  booked: 'primary',
   paid: 'success',
   completed: 'info',
   refunded: 'danger',
