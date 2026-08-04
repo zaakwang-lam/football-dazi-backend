@@ -13,14 +13,14 @@
         <div class="metric-card">
           <div class="metric-label">📋 今日订单</div>
           <div class="metric-value">{{ overview.todayOrders ?? '—' }}</div>
-          <div class="metric-extra">含已预订/已支付</div>
+          <div class="metric-extra">今日创建 (含所有状态)</div>
         </div>
       </el-col>
       <el-col :span="4">
         <div class="metric-card">
           <div class="metric-label">💰 今日 GMV</div>
           <div class="metric-value">¥{{ formatMoney(overview.todayGmv) }}</div>
-          <div class="metric-extra">已支付订单</div>
+          <div class="metric-extra">已支付/已完成实付金额</div>
         </div>
       </el-col>
       <el-col :span="4">
