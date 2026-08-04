@@ -15,6 +15,7 @@ const courtCtrl = require('../controllers/court');
 const lfgCtrl = require('../controllers/lfg');
 const teamCtrl = require('../controllers/team');
 const dashCtrl = require('../controllers/dashboard');
+const courtDashCtrl = require('../controllers/court-dashboard');
 
 // ===== 公共接口 =====
 router.post('/api/admin/login', authCtrl.adminLogin);
@@ -59,6 +60,7 @@ router.get('/api/user/me/lfg-posts', userAuth(), lfgCtrl.getMyLfgPosts);  // 我
 router.get('/api/admin/profile', adminAuth(), authCtrl.getAdminProfile);
 router.post('/api/admin/logout', adminAuth(), authCtrl.logout);
 
+router.get('/api/admin/courts/dashboard', adminAuth(['super_admin', 'court_admin']), courtDashCtrl.getCourtDashboard);
 router.get('/api/admin/courts', adminAuth(), courtCtrl.adminListCourts);
 router.get('/api/admin/courts/:id', adminAuth(), courtCtrl.adminGetCourtDetail);
 router.post('/api/admin/courts', adminAuth(['super_admin', 'court_admin']), courtCtrl.adminCreateCourt);
