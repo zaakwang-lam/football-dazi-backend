@@ -14,7 +14,7 @@ module.exports = (sequelize) => {
     price: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
     openTime: { type: DataTypes.TIME, field: 'open_time' },
     closeTime: { type: DataTypes.TIME, field: 'close_time' },
-    surfaceType: { type: DataTypes.ENUM('人工草地', '天然草地', '硬地'), defaultValue: '人工草地', field: 'surface_type' },  // 场地性质（旧字段，保留作 fallback）
+    surfaceType: { type: DataTypes.STRING(32), defaultValue: '人工草地', field: 'surface_type', validate: { isIn: [['人工草地','天然草地','硬地']] } },  // 场地性质（旧字段，保留作 fallback）(2026-08-04 从 ENUM 改 VARCHAR 避免连接 latin1 双重编码)
     surfaceTypes: { type: DataTypes.JSON, field: 'surface_types' },  // 场地性质多选 ["人工草地","天然草地","硬地"] (2026-07-28 新增)
     district: { type: DataTypes.STRING(32) },  // 行政区（天河/海珠/越秀/荔湾/白云/黄埔/番禺/花都/南沙/从化/增城）11选1 (2026-07-28 新增)
     images: { type: DataTypes.JSON },

@@ -86,54 +86,33 @@ async function listOrders(req, res) {
 
 /**
  * GET /api/admin/orders/:id
- * 订单详情（球场方/运营）
  */
 async function getDetail(req, res) {
   const { id } = req.params;
-  const order = await Order.findOne({
-    where: { id },
+  const order = await Order.findByPk(id, {
     include: [
-      { model: Court, as: 'court' },
-      { model: CourtSchedule, as: 'schedule' },
+      { model: Court, as: 'court', attributes: ['id', 'name', 'type', 'phone'] },
+      { model: CourtSchedule, as: 'schedule', attributes: ['id', 'date', 'timeSlot'] },
       { model: User, as: 'user', attributes: ['id', 'nickname', 'avatarUrl', 'phone'] }
     ]
   });
 
   if (!order) throw new BizError(ErrorCode.NOT_FOUND, '订单不存在');
 
-  // 球场方限定
+  // 球场方只能看自己球场的订单
   if (req.admin.role === 'court_admin' && order.courtId !== req.admin.courtId) {
     throw new BizError(ErrorCode.FORBIDDEN, '无权限查看该订单');
   }
 
   res.json(success({
-    id: order.id,
-    orderNo: order.orderNo,
-    status: order.status,
-    notifyStatus: order.notifyStatus,
-    notifyTime: order.notifyTime,
-    amount: parseFloat(order.amount),
-    contactName: order.contactName,
-    contactPhone: order.contactPhone,
-    remark: order.remark,
-    createdAt: order.createdAt,
-    user: order.user ? {
-      id: order.user.id,
-      nickname: order.user.nickname,
-      avatarUrl: order.user.avatarUrl,
-      phone: order.user.phone
-    } : null,
-    court: order.court,
-    schedule: order.schedule ? {
-      date: order.schedule.date,
-      timeSlot: order.schedule.timeSlot
-    } : null
+    ...order.toJSON(),
+    amount: parseFloat(order.amount)
   }));
 }
 
 /**
  * POST /api/admin/orders/:id/accept
- * 球场方接单（确认预订）
+ * 球场方接单（线下付款约定：booked → completed）
  */
 async function acceptOrder(req, res) {
   const { id } = req.params;
@@ -175,10 +154,10 @@ async function cancelOrder(req, res) {
   order.refundTime = new Date();  // 复用字段标记拒绝时间
   await order.save();
 
-  // 释放排期
+  // 释放排期 (2026-08-04 修复: CourtSchedule.status ENUM 是 free/booked/closed, 写 'open' 会截断报错)
   if (order.scheduleId) {
     await CourtSchedule.update(
-      { status: 'open', orderId: null },
+      { status: 'free', orderId: null },
       { where: { id: order.scheduleId } }
     );
   }
