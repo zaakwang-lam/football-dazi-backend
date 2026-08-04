@@ -28,6 +28,7 @@ router.post('/api/payment/notify', express.text({ type: '*/*' }), orderCtrl.paym
 // ===== C 端用户接口（需 userAuth）=====
 router.post('/api/v1/orders', userAuth(), orderCtrl.createOrder);
 router.get('/api/v1/orders', userAuth(), orderCtrl.listMyOrders);
+router.post('/api/v1/orders/:id/cancel', userAuth(), orderCtrl.cancelMyOrder);
 router.get('/api/v1/orders/:id', userAuth(), orderCtrl.getOrderDetail);
 router.post('/api/v1/payment/unified-order', userAuth(), orderCtrl.payOrder);
 router.post('/api/v1/payment/refund', userAuth(), orderCtrl.applyRefund);

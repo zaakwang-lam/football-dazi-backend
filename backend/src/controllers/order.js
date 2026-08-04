@@ -381,5 +381,37 @@ module.exports = {
   paymentNotify,
   applyRefund,
   listMyOrders,
-  getOrderDetail
+  getOrderDetail,
+  cancelMyOrder
 };
+
+async function cancelMyOrder(req, res) {
+  const { id } = req.params;
+  const userId = req.user?.id;
+
+  const order = await Order.findByPk(id);
+  if (!order) throw new BizError(ErrorCode.NOT_FOUND, '订单不存在');
+  if (order.userId !== userId) {
+    throw new BizError(ErrorCode.FORBIDDEN, '只能取消自己的订单');
+  }
+  if (!['pending', 'booked'].includes(order.status)) {
+    throw new BizError(ErrorCode.CONFLICT, `订单状态 ${order.status}，无法取消`);
+  }
+
+  order.status = 'canceled';
+  order.refundTime = new Date();
+  await order.save();
+
+  if (order.scheduleId) {
+    await CourtSchedule.update(
+      { status: 'free', orderId: null },
+      { where: { id: order.scheduleId } }
+    );
+  }
+
+  logger.info(`C 端用户 ${userId} 取消订单 ${order.orderNo}`);
+  res.json(success({
+    orderNo: order.orderNo,
+    status: order.status
+  }));
+}
