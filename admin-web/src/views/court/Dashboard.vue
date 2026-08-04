@@ -5,29 +5,35 @@
       <el-col :span="6">
         <div class="metric-card">
           <div class="metric-label">📋 今日订单</div>
-          <div class="metric-value">12</div>
-          <div class="metric-extra">+3 较昨日</div>
+          <div class="metric-value">{{ metrics.todayOrders ?? '—' }}</div>
+          <div class="metric-extra" :class="orderTrendClass">
+            {{ formatTrend(metrics.todayOrders, metrics.yesterdayOrders) }} 较昨日
+          </div>
         </div>
       </el-col>
       <el-col :span="6">
         <div class="metric-card">
           <div class="metric-label">💰 今日收入</div>
-          <div class="metric-value">¥3,200</div>
-          <div class="metric-extra">+12% 较昨日</div>
+          <div class="metric-value">¥{{ formatMoney(metrics.todayRevenue) }}</div>
+          <div class="metric-extra" :class="revenueTrendClass">
+            {{ formatTrendPercent(metrics.todayRevenue, metrics.yesterdayRevenue) }} 较昨日
+          </div>
         </div>
       </el-col>
       <el-col :span="6">
         <div class="metric-card">
           <div class="metric-label">👥 新增客户</div>
-          <div class="metric-value">5</div>
-          <div class="metric-extra">+2 较昨日</div>
+          <div class="metric-value">{{ metrics.newCustomers ?? '—' }}</div>
+          <div class="metric-extra" :class="customerTrendClass">
+            {{ formatTrend(metrics.newCustomers, metrics.yesterdayNewCustomers) }} 较昨日
+          </div>
         </div>
       </el-col>
       <el-col :span="6">
         <div class="metric-card">
           <div class="metric-label">⭐ 场地评分</div>
-          <div class="metric-value">4.8</div>
-          <div class="metric-extra">基于 156 条评价</div>
+          <div class="metric-value">{{ metrics.rating?.toFixed(1) ?? '—' }}</div>
+          <div class="metric-extra">{{ metrics.courtName || '基于历史评价' }}</div>
         </div>
       </el-col>
     </el-row>
@@ -35,59 +41,183 @@
     <!-- 待处理订单 -->
     <div class="page-card" style="margin-top: 20px;">
       <div class="card-header">
-        <h3>待处理订单 (3)</h3>
-        <el-button type="primary" link @click="$router.push('/orders')">查看全部 ›</el-button>
+        <h3>⏰ 待处理订单 ({{ pendingOrders.length }})</h3>
+        <el-button type="primary" link @click="$router.push('/court/orders')">查看全部 ›</el-button>
       </div>
 
-      <el-table :data="pendingOrders" stripe>
-        <el-table-column prop="orderNo" label="订单号" width="140" />
-        <el-table-column prop="courtName" label="场地" />
-        <el-table-column prop="customer" label="客户" width="100" />
-        <el-table-column prop="time" label="时段" width="140" />
-        <el-table-column prop="amount" label="金额" width="100">
-          <template #default="{ row }">¥{{ row.amount }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="180">
-          <template #default>
-            <el-button size="small" type="primary">确认</el-button>
-            <el-button size="small">拒绝</el-button>
+      <el-table :data="pendingOrders" stripe v-loading="loading">
+        <el-table-column prop="orderNo" label="订单号" width="170" />
+        <el-table-column label="预订用户" width="140">
+          <template #default="{ row }">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <el-avatar v-if="row.user?.avatarUrl" :src="row.user.avatarUrl" :size="28" />
+              <el-avatar v-else :size="28">{{ row.user?.nickname?.[0] || '?' }}</el-avatar>
+              <span>{{ row.user?.nickname || '—' }}</span>
+            </div>
           </template>
         </el-table-column>
+        <el-table-column label="时段" width="200">
+          <template #default="{ row }">
+            <span v-if="row.schedule">{{ row.schedule.date }} {{ row.schedule.timeSlot }}</span>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="金额" width="100">
+          <template #default="{ row }">
+            <span class="price">¥{{ row.amount }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="下单时间" width="160">
+          <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="180" fixed="right">
+          <template #default="{ row }">
+            <el-button size="small" type="primary" @click="goToOrders">去处理</el-button>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <div style="padding: 20px; color: #999;">✅ 暂无待处理订单</div>
+        </template>
       </el-table>
     </div>
 
-    <!-- 最近评价 -->
+    <!-- 最近订单 -->
     <div class="page-card" style="margin-top: 20px;">
       <div class="card-header">
-        <h3>💬 最近评价</h3>
+        <h3>📋 最近订单</h3>
+        <el-button type="primary" link @click="$router.push('/court/orders')">查看全部 ›</el-button>
       </div>
-      <div class="review-list">
-        <div class="review-item" v-for="(r, i) in recentReviews" :key="i">
-          <el-avatar :size="40">{{ r.name[0] }}</el-avatar>
-          <div class="review-content">
-            <div class="review-name">{{ r.name }} <span class="rating">⭐⭐⭐⭐⭐</span></div>
-            <div class="review-text">{{ r.text }}</div>
-            <div class="review-time">{{ r.time }}</div>
-          </div>
-        </div>
-      </div>
+
+      <el-table :data="recentOrders" stripe v-loading="loading">
+        <el-table-column prop="orderNo" label="订单号" width="170" />
+        <el-table-column label="用户" width="140">
+          <template #default="{ row }">
+            <span>{{ row.user?.nickname || '—' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="时段" width="200">
+          <template #default="{ row }">
+            <span v-if="row.schedule">{{ row.schedule.date }} {{ row.schedule.timeSlot }}</span>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="金额" width="100">
+          <template #default="{ row }">
+            <span class="price">¥{{ row.amount }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="statusType[row.status]" size="small">{{ statusMap[row.status] || row.status }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="下单时间" width="160">
+          <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+        </el-table-column>
+        <template #empty>
+          <div style="padding: 20px; color: #999;">暂无订单</div>
+        </template>
+      </el-table>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
+import { dashboardApi, orderApi } from '@/api';
+import { ElMessage, ElMessageBox } from 'element-plus';
 
-const pendingOrders = ref([
-  { orderNo: 'O1001', courtName: '天河体育中心 11人场', customer: '老王', time: '今晚 19:00-21:00', amount: 1200 },
-  { orderNo: 'O1002', courtName: '天河体育中心 11人场', customer: '阿强', time: '今晚 21:00-23:00', amount: 1200 },
-  { orderNo: 'O1003', courtName: '天河体育中心 11人场', customer: '小林', time: '明天 19:00-21:00', amount: 1200 }
-]);
+const router = useRouter();
 
-const recentReviews = ref([
-  { name: '王队长', text: '场地质量好，灯光夜场效果佳，下次再来！', time: '3 天前' },
-  { name: '李前锋', text: '停车场大，旁边吃饭方便，价格略贵。', time: '1 周前' }
-]);
+const loading = ref(false);
+const metrics = ref({});
+const pendingOrders = ref([]);
+const recentOrders = ref([]);
+
+const statusMap = {
+  pending: '待支付',
+  booked: '已预订',
+  paid: '已支付',
+  completed: '已完成',
+  refunded: '已退款',
+  canceled: '已取消'
+};
+const statusType = {
+  pending: 'warning',
+  booked: 'primary',
+  paid: 'success',
+  completed: 'info',
+  refunded: 'danger',
+  canceled: 'danger'
+};
+
+// 趋势颜色计算
+const orderTrendClass = computed(() => {
+  if (metrics.value.yesterdayOrders == null) return '';
+  const diff = (metrics.value.todayOrders || 0) - (metrics.value.yesterdayOrders || 0);
+  return diff > 0 ? 'trend-up' : diff < 0 ? 'trend-down' : 'trend-flat';
+});
+const revenueTrendClass = computed(() => {
+  if (metrics.value.yesterdayRevenue == null) return '';
+  const diff = (metrics.value.todayRevenue || 0) - (metrics.value.yesterdayRevenue || 0);
+  return diff > 0 ? 'trend-up' : diff < 0 ? 'trend-down' : 'trend-flat';
+});
+const customerTrendClass = computed(() => {
+  if (metrics.value.yesterdayNewCustomers == null) return '';
+  const diff = (metrics.value.newCustomers || 0) - (metrics.value.yesterdayNewCustomers || 0);
+  return diff > 0 ? 'trend-up' : diff < 0 ? 'trend-down' : 'trend-flat';
+});
+
+async function loadDashboard() {
+  loading.value = true;
+  try {
+    const res = await dashboardApi.courtDashboard();
+    const d = res.data || {};
+    metrics.value = d.metrics || {};
+    pendingOrders.value = d.pendingOrders || [];
+    recentOrders.value = d.recentOrders || [];
+  } catch (e) {
+    ElMessage.error(e.message || '加载 Dashboard 失败');
+  } finally {
+    loading.value = false;
+  }
+}
+
+function formatMoney(val) {
+  if (val == null) return '—';
+  return Number(val).toLocaleString('zh-CN', { maximumFractionDigits: 0 });
+}
+
+function formatTrend(today, yesterday) {
+  if (yesterday == null || yesterday === 0) {
+    return today > 0 ? `+${today}` : '±0';
+  }
+  const diff = today - yesterday;
+  return diff >= 0 ? `+${diff}` : `${diff}`;
+}
+
+function formatTrendPercent(today, yesterday) {
+  if (yesterday == null || yesterday === 0) {
+    if (today > 0) return '+∞%';
+    return '±0%';
+  }
+  const pct = Math.round(((today - yesterday) / yesterday) * 100);
+  return pct >= 0 ? `+${pct}%` : `${pct}%`;
+}
+
+function formatTime(t) {
+  if (!t) return '—';
+  const d = new Date(t);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function goToOrders() {
+  router.push('/court/orders');
+}
+
+onMounted(loadDashboard);
 </script>
 
 <style lang="scss" scoped>
@@ -112,42 +242,22 @@ const recentReviews = ref([
   }
 }
 
-.review-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.price {
+  color: #FF6B00;
+  font-weight: 600;
 }
 
-.review-item {
-  display: flex;
-  gap: 12px;
+.muted {
+  color: #999;
+}
 
-  .review-content {
-    flex: 1;
-
-    .review-name {
-      font-size: 14px;
-      font-weight: 600;
-      color: #1A1A1A;
-
-      .rating {
-        margin-left: 8px;
-        color: #FFB800;
-        font-weight: normal;
-      }
-    }
-
-    .review-text {
-      margin: 4px 0;
-      font-size: 14px;
-      color: #666666;
-      line-height: 1.5;
-    }
-
-    .review-time {
-      font-size: 12px;
-      color: #999999;
-    }
-  }
+.trend-up {
+  color: #67C23A;
+}
+.trend-down {
+  color: #F56C6C;
+}
+.trend-flat {
+  color: #999;
 }
 </style>
