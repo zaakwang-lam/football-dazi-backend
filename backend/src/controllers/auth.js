@@ -96,6 +96,9 @@ async function refreshToken(req, res) {
  */
 async function userLogin(req, res) {
   const { code, userInfo } = req.body;
+  // 【2026-08-06 v1.4.2 调试】加详细日志看体验版 wx.getUserProfile 返回什么
+  console.log('[userLogin] code=', code?.substring(0, 10) + '...');
+  console.log('[userLogin] userInfo=', JSON.stringify(userInfo));
   if (!code) {
     throw new BizError(ErrorCode.PARAM_INVALID, '缺少 code');
   }
