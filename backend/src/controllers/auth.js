@@ -324,6 +324,42 @@ async function getUserProfile(req, res) {
 }
 
 /**
+ * PUT /api/v1/user/profile
+ * 【2026-08-06 PRD v2.0 新增】用户修改昵称 / 头像
+ * 字段都可选（前端可能只改昵称或只改头像）
+ */
+async function updateUserProfile(req, res) {
+  const { nickname, avatarUrl } = req.body || {};
+  const user = await User.findByPk(req.user.id);
+  if (!user) {
+    throw new BizError(ErrorCode.NOT_FOUND, '用户不存在');
+  }
+
+  // 昵称清洗：去空白、限长 20 字；空值不修改
+  if (nickname !== undefined && nickname !== null) {
+    const cleanNick = String(nickname).trim().slice(0, 20);
+    if (cleanNick) {
+      user.nickname = cleanNick;
+    }
+  }
+  // 头像：空值不修改
+  if (avatarUrl !== undefined && avatarUrl !== '') {
+    user.avatarUrl = avatarUrl;
+  }
+  await user.save();
+
+  res.json(success({
+    id: user.id,
+    nickname: user.nickname,
+    avatarUrl: user.avatarUrl,
+    phone: user.phone,
+    role: user.role,
+    courtId: user.courtId,
+    registered: !!user.role
+  }));
+}
+
+/**
  * GET /api/admin/profile
  */
 async function getAdminProfile(req, res) {
@@ -433,6 +469,7 @@ module.exports = {
   userLogin,
   registerRole,
   getUserProfile,
+  updateUserProfile,  // 【2026-08-06 PRD v2.0 新增】修改昵称/头像
   getMyCourts,
   getMyTeams,  // 我的球队列表（2026-07-28 新增）
   getAdminProfile,

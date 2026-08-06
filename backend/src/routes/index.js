@@ -52,6 +52,7 @@ router.post('/api/v1/teams/:id/checkin', userAuth(), teamCtrl.checkin);
 
 // ===== C 端用户补充接口（注册分支、附近球场）=====
 router.get('/api/user/profile', userAuth(), authCtrl.getUserProfile);
+router.put('/api/v1/user/profile', userAuth(), authCtrl.updateUserProfile);  // 【2026-08-06 PRD v2.0 新增】修改昵称/头像
 router.post('/api/user/register-role', userAuth(), authCtrl.registerRole);
 router.get('/api/user/me/courts', userAuth(), authCtrl.getMyCourts);  // 我的球场列表（2026-07-28 新增）
 router.get('/api/user/me/teams', userAuth(), authCtrl.getMyTeams);    // 我的球队列表（2026-07-28 新增）
