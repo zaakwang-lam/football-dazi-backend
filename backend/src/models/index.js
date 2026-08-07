@@ -61,9 +61,11 @@ Checkin.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 Team.hasMany(AaPayment, { foreignKey: 'teamId', as: 'aaPayments' });
 AaPayment.belongsTo(Team, { foreignKey: 'teamId', as: 'team' });
 
-// 管理员和场地
-Court.belongsTo(Admin, { foreignKey: 'ownerId', as: 'owner' });
-Admin.hasMany(Court, { foreignKey: 'ownerId', as: 'courts' });
+// 球场归属小程序用户（ownerId = users.id）
+// 历史错误地把 ownerId 指到 admins，导致小程序注册球场时 FK 失败：
+// "Cannot add or update a child row"
+Court.belongsTo(User, { foreignKey: 'ownerId', as: 'owner' });
+User.hasMany(Court, { foreignKey: 'ownerId', as: 'ownedCourts' });
 
 // 支付订单
 PaymentOrder.belongsTo(User, { foreignKey: 'userId', as: 'user' });
