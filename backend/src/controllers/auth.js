@@ -9,18 +9,13 @@ const logger = require('../utils/logger');
 const { success, fail, BizError, ErrorCode } = require('../utils/response');
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require('../utils/jwt');
 
-/** 从用户记录解析已注册身份；未手动选身份时 roles=[]，对外 role 置空（忽略 DB 默认值 user） */
 function resolveIdentity(user) {
   const roles = Array.isArray(user.roles) ? user.roles.filter(Boolean) : [];
   let role = '';
   if (roles.length) {
     role = (user.role && roles.includes(user.role)) ? user.role : roles[0];
   }
-  return {
-    roles,
-    role,
-    registered: roles.length > 0
-  };
+  return { roles, role, registered: roles.length > 0 };
 }
 
 async function adminLogin(req, res) {
@@ -45,17 +40,11 @@ async function refreshToken(req, res) {
   res.json(success({ accessToken: generateAccessToken({ id: admin.id, username: admin.username, role: admin.role, courtId: admin.courtId }) }));
 }
 
-/** POST /api/user/login */
 async function userLogin(req, res) {
   const { code, userInfo } = req.body;
   if (!code) throw new BizError(ErrorCode.PARAM_INVALID, '缺少 code');
   const sessionRes = await axios.get('https://api.weixin.qq.com/sns/jscode2session', {
-    params: {
-      appid: config.wechat.appid,
-      secret: config.wechat.secret,
-      js_code: code,
-      grant_type: 'authorization_code'
-    }
+    params: { appid: config.wechat.appid, secret: config.wechat.secret, js_code: code, grant_type: 'authorization_code' }
   });
   if (sessionRes.data.errcode) {
     logger.error(`微信登录失败: ${sessionRes.data.errmsg} (errcode=${sessionRes.data.errcode})`);
@@ -64,10 +53,8 @@ async function userLogin(req, res) {
   const { openid, unionid } = sessionRes.data;
   let user = await User.findOne({ where: { openid } });
   if (!user) {
-    // 仅建立微信身份，不写入 roles；等用户手动选择「个人 / 球场方」后再 register-role
     user = await User.create({
-      openid,
-      unionid,
+      openid, unionid,
       nickname: userInfo?.nickName || userInfo?.nickname || '微信用户',
       avatarUrl: (userInfo?.avatarUrl && /^https?:\/\//i.test(userInfo.avatarUrl)) ? userInfo.avatarUrl : '',
       gender: userInfo?.gender || 0,
@@ -84,26 +71,18 @@ async function userLogin(req, res) {
   res.json(success({
     accessToken,
     user: {
-      id: user.id,
-      nickname: user.nickname,
-      avatarUrl: user.avatarUrl,
-      phone: user.phone,
-      role: identity.role,
-      roles: identity.roles,
-      courtId: user.courtId,
-      registered: identity.registered
+      id: user.id, nickname: user.nickname, avatarUrl: user.avatarUrl, phone: user.phone,
+      role: identity.role, roles: identity.roles, courtId: user.courtId, registered: identity.registered
     }
   }));
 }
 
-/** POST /api/user/register-role */
 async function registerRole(req, res) {
   const { role, courtInfo } = req.body;
   const userId = req.user.id;
   if (!['user', 'court'].includes(role)) throw new BizError(ErrorCode.PARAM_INVALID, 'role 必须是 user 或 court');
   const user = await User.findByPk(userId);
   if (!user) throw new BizError(ErrorCode.NOT_FOUND, '用户不存在');
-  // 只认 roles 数组；DB 里 role 默认值 user 不代表已选身份
   const currentRoles = Array.isArray(user.roles) ? [...user.roles].filter(Boolean) : [];
   if (currentRoles.includes(role)) throw new BizError(ErrorCode.FORBIDDEN, `已注册过 ${role} 角色`);
 
@@ -113,12 +92,7 @@ async function registerRole(req, res) {
     const ALLOWED_TYPES = ['11人制', '8人制', '7人制', '5人制', '3人制'];
     if (!ALLOWED_TYPES.includes(courtInfo.type)) throw new BizError(ErrorCode.PARAM_INVALID, '请选择正确的人制类型');
     if (!courtInfo.district || !ALLOWED_DISTRICTS.includes(courtInfo.district)) throw new BizError(ErrorCode.PARAM_INVALID, `请选择正确的行政区（${ALLOWED_DISTRICTS.join('/')}）`);
-    if (courtInfo.longitude && courtInfo.latitude) {
-      const lng = Number(courtInfo.longitude), lat = Number(courtInfo.latitude);
-      if (isNaN(lng) || isNaN(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90) throw new BizError(ErrorCode.PARAM_INVALID, '经纬度格式不正确');
-    }
     const ALLOWED_SURFACES = ['人工草地', '天然草地', '硬地'];
-    if (courtInfo.surfaceTypes && !Array.isArray(courtInfo.surfaceTypes)) throw new BizError(ErrorCode.PARAM_INVALID, '场地性质必须是数组');
     const surfaceTypes = (courtInfo.surfaceTypes || []).filter(s => ALLOWED_SURFACES.includes(s));
     if (!surfaceTypes.length && courtInfo.surfaceType) surfaceTypes.push(courtInfo.surfaceType);
     if (!surfaceTypes.length) throw new BizError(ErrorCode.PARAM_INVALID, '请选择至少一种场地性质');
@@ -141,45 +115,23 @@ async function registerRole(req, res) {
     let court;
     try {
       court = await Court.create({
-        name: courtInfo.name,
-        ownerId: userId,
-        type: courtInfo.type,
-        address: courtInfo.address,
+        name: courtInfo.name, ownerId: userId, type: courtInfo.type, address: courtInfo.address,
         district: courtInfo.district,
         longitude: courtInfo.longitude ? Number(courtInfo.longitude) : null,
         latitude: courtInfo.latitude ? Number(courtInfo.latitude) : null,
-        phone: courtInfo.phone || '',
-        price: Number(courtInfo.price) || 0,
-        openTime: courtInfo.openTime || '08:00:00',
-        closeTime: courtInfo.closeTime || '22:00:00',
-        surfaceType: surfaceTypes[0],
-        surfaceTypes,
-        openHours,
-        description: courtInfo.description || '',
-        status: 2
+        phone: courtInfo.phone || '', price: Number(courtInfo.price) || 0,
+        openTime: courtInfo.openTime || '08:00:00', closeTime: courtInfo.closeTime || '22:00:00',
+        surfaceType: surfaceTypes[0], surfaceTypes, openHours,
+        description: courtInfo.description || '', status: 2
       });
     } catch (err) {
-      logger.error(`[registerRole:court] Court.create failed userId=${userId}: ${err.stack || err.message}`);
-      const dbMessage = String(err.message || '数据库写入失败');
-      if (/Data truncated for column 'type'|Incorrect .* value for column 'type'|ER_TRUNCATED_WRONG_VALUE_FOR_FIELD/i.test(dbMessage)) {
-        throw new BizError(ErrorCode.PARAM_INVALID, `服务器数据库尚未同步新人制类型（${courtInfo.type}），请先执行数据库迁移后重试`);
-      }
-      if (/surface_types|open_hours|unknown column/i.test(dbMessage)) {
-        throw new BizError(ErrorCode.PARAM_INVALID, '服务器数据库结构未完成同步，请更新后端数据库后重试');
-      }
-      if (/foreign key constraint|Cannot add or update a child row/i.test(dbMessage)) {
-        throw new BizError(
-          ErrorCode.PARAM_INVALID,
-          '球场归属外键配置异常（owner_id 曾错误指向管理员表）。请重启后端以自动修复后重试；若仍失败请联系运维删除 courts.owner_id 外键。'
-        );
-      }
-      throw new BizError(ErrorCode.PARAM_INVALID, `球场信息保存失败：${dbMessage.slice(0, 180)}`);
+      logger.error(`[registerRole:court] ${err.stack || err.message}`);
+      throw new BizError(ErrorCode.PARAM_INVALID, `球场信息保存失败：${String(err.message || '').slice(0, 180)}`);
     }
     user.role = 'court';
     user.courtId = court.id;
     user.roles = [...new Set([...currentRoles, 'user', 'court'])];
     await user.save();
-    logger.info(`球场方注册: userId=${userId}, courtId=${court.id}, name=${court.name}`);
     return res.json(success({ role: 'court', roles: user.roles, courtId: court.id, courtStatus: 'pending', message: '球场已提交，请等待审核' }, '注册成功'));
   }
 
@@ -199,27 +151,14 @@ async function getUserProfile(req, res) {
     court = await Court.findByPk(user.courtId);
   }
   res.json(success({
-    id: user.id,
-    nickname: user.nickname,
-    avatarUrl: user.avatarUrl,
-    phone: user.phone,
-    role: identity.role,
-    roles: identity.roles,
-    registered: identity.registered,
-    courtId: user.courtId,
+    id: user.id, nickname: user.nickname, avatarUrl: user.avatarUrl, phone: user.phone,
+    role: identity.role, roles: identity.roles, registered: identity.registered, courtId: user.courtId,
     court: court && {
-      id: court.id,
-      name: court.name,
-      address: court.address,
-      district: court.district,
-      type: court.type,
-      surfaceType: court.surfaceType,
-      surfaceTypes: court.surfaceTypes || [],
-      status: court.status,
-      openTime: court.openTime,
-      closeTime: court.closeTime,
-      openHours: court.openHours || null,
-      createdAt: court.createdAt
+      id: court.id, name: court.name, address: court.address, district: court.district,
+      type: court.type, surfaceType: court.surfaceType, surfaceTypes: court.surfaceTypes || [],
+      status: court.status, phone: court.phone, price: court.price != null ? parseFloat(court.price) : null,
+      openTime: court.openTime, closeTime: court.closeTime, openHours: court.openHours || null,
+      description: court.description, createdAt: court.createdAt
     }
   }));
 }
@@ -232,25 +171,17 @@ async function updateUserProfile(req, res) {
     const cleanNick = String(nickname).trim().slice(0, 20);
     if (cleanNick) user.nickname = cleanNick;
   }
-  if (avatarUrl !== undefined && avatarUrl !== '') {
-    if (/^https?:\/\//i.test(String(avatarUrl))) {
-      user.avatarUrl = avatarUrl;
-    }
+  if (avatarUrl !== undefined && avatarUrl !== '' && /^https?:\/\//i.test(String(avatarUrl))) {
+    user.avatarUrl = avatarUrl;
   }
   await user.save();
   const identity = resolveIdentity(user);
   res.json(success({
-    id: user.id,
-    nickname: user.nickname,
-    avatarUrl: user.avatarUrl,
-    phone: user.phone,
-    role: identity.role,
-    roles: identity.roles,
-    courtId: user.courtId
+    id: user.id, nickname: user.nickname, avatarUrl: user.avatarUrl, phone: user.phone,
+    role: identity.role, roles: identity.roles, courtId: user.courtId
   }));
 }
 
-/** POST /api/v1/user/avatar - 接收小程序压缩后的 base64 头像 */
 async function uploadAvatar(req, res) {
   const { base64, mimeType = 'image/jpeg' } = req.body || {};
   if (!base64 || typeof base64 !== 'string') throw new BizError(ErrorCode.PARAM_INVALID, '缺少头像图片');
@@ -275,22 +206,65 @@ async function uploadAvatar(req, res) {
 async function getAdminProfile(req, res) { res.json(success(req.admin)); }
 async function logout(req, res) { res.json(success(null, '已登出')); }
 
+/** 我的球场：含审核中/营业中/已拒绝，便于再次编辑 */
 async function getMyCourts(req, res) {
   const userId = req.user.id;
   const { Court } = require('../models');
-  const courts = await Court.findAll({ where: { ownerId: userId, status: 1 }, order: [['created_at', 'DESC']] });
+  const { Op } = require('sequelize');
+  const courts = await Court.findAll({
+    where: { ownerId: userId, status: { [Op.ne]: -1 } },
+    order: [['created_at', 'DESC']]
+  });
   res.json(success({
     list: courts.map(c => ({
       id: c.id, name: c.name, type: c.type, district: c.district, address: c.address,
       longitude: c.longitude ? parseFloat(c.longitude) : null,
       latitude: c.latitude ? parseFloat(c.latitude) : null,
-      phone: c.phone, price: parseFloat(c.price),
+      phone: c.phone, price: c.price != null ? parseFloat(c.price) : 0,
       surfaceType: c.surfaceType, surfaceTypes: c.surfaceTypes || [],
       openTime: c.openTime, closeTime: c.closeTime, openHours: c.openHours || null,
-      description: c.description, status: c.status, rating: parseFloat(c.rating), createdAt: c.createdAt
+      description: c.description, status: c.status,
+      rating: c.rating != null ? parseFloat(c.rating) : 0,
+      createdAt: c.createdAt
     })),
     total: courts.length
   }));
+}
+
+/**
+ * PUT /api/user/me/courts/:id
+ * 球场方再次编辑自己的球场（费用、电话、简介、营业时间等）
+ */
+async function updateMyCourt(req, res) {
+  const userId = Number(req.user.id);
+  const courtId = Number(req.params.id);
+  const { Court } = require('../models');
+  const court = await Court.findByPk(courtId);
+  if (!court) throw new BizError(ErrorCode.NOT_FOUND, '球场不存在');
+  if (Number(court.ownerId) !== userId) throw new BizError(ErrorCode.FORBIDDEN, '只能编辑自己的球场');
+
+  const body = req.body || {};
+  const allowed = ['name', 'address', 'district', 'type', 'phone', 'price', 'openTime', 'closeTime',
+    'description', 'surfaceType', 'surfaceTypes', 'openHours', 'longitude', 'latitude'];
+  for (const key of allowed) {
+    if (body[key] === undefined) continue;
+    if (key === 'price') court.price = Number(body.price) || 0;
+    else if (key === 'longitude' || key === 'latitude') court[key] = body[key] != null && body[key] !== '' ? Number(body[key]) : null;
+    else court[key] = body[key];
+  }
+
+  // 关键营业中内容后保持营业；审核中/拒绝后修改可再次进审核
+  if (court.status === 3) court.status = 2;
+  await court.save();
+
+  res.json(success({
+    id: court.id,
+    name: court.name,
+    phone: court.phone,
+    price: court.price != null ? parseFloat(court.price) : 0,
+    status: court.status,
+    description: court.description
+  }, '保存成功'));
 }
 
 async function getMyTeams(req, res) {
@@ -309,4 +283,7 @@ async function getMyTeams(req, res) {
   res.json(success({ list, total: list.length }));
 }
 
-module.exports = { adminLogin, refreshToken, userLogin, registerRole, getUserProfile, updateUserProfile, uploadAvatar, getMyCourts, getMyTeams, getAdminProfile, logout };
+module.exports = {
+  adminLogin, refreshToken, userLogin, registerRole, getUserProfile, updateUserProfile,
+  uploadAvatar, getMyCourts, updateMyCourt, getMyTeams, getAdminProfile, logout
+};
