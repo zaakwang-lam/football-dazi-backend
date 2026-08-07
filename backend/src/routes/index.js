@@ -43,6 +43,7 @@ router.put('/api/v1/user/profile', userAuth(), authCtrl.updateUserProfile);
 router.post('/api/v1/user/avatar', userAuth(), authCtrl.uploadAvatar);
 router.post('/api/user/register-role', userAuth(), authCtrl.registerRole);
 router.get('/api/user/me/courts', userAuth(), authCtrl.getMyCourts);
+router.put('/api/user/me/courts/:id', userAuth(), authCtrl.updateMyCourt);
 router.get('/api/user/me/teams', userAuth(), authCtrl.getMyTeams);
 router.get('/api/user/me/lfg-posts', userAuth(), lfgCtrl.getMyLfgPosts);
 
