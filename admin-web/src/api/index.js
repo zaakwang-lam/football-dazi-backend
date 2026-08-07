@@ -24,7 +24,8 @@ export const dashboardApi = {
 export const userApi = {
   list: (params) => request.get('/admin/users', { params }),
   detail: (id) => request.get(`/admin/users/${id}`),
-  updateStatus: (id, data) => request.put(`/admin/users/${id}/status`, data)
+  updateStatus: (id, data) => request.put(`/admin/users/${id}/status`, data),
+  delete: (id) => request.delete(`/admin/users/${id}`)
 };
 
 export const orderApi = {

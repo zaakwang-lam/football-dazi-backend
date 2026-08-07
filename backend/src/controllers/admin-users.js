@@ -1,6 +1,6 @@
 // src/controllers/admin-users.js
 // 后台用户管理接口（Ops / 超管视角）
-const { User, Court } = require('../models');
+const { User, Court, LfgPost, LfgJoin, TeamMember, Order, Checkin } = require('../models');
 const { success, BizError, ErrorCode } = require('../utils/response');
 const { Op } = require('sequelize');
 const logger = require('../utils/logger');
@@ -175,8 +175,76 @@ async function updateUserStatus(req, res) {
   res.json(success({ id: user.id, status: user.status }));
 }
 
+/**
+ * DELETE /api/admin/users/:id
+ * 手动删除用户（仅 super_admin / ops）
+ * 【2026-08-07 新增】宏哥要求可手动清除用户信息用于重测
+ * - 个人用户：删除 user 记录，同时级联删除 lfg_posts/lfg_joins/team_members/orders/checkins
+ * - 球场方：额外删除其创建的球场（关联外键 court.owner_id）
+ * - 事务保证：全部成功 or 全部回滚
+ */
+async function deleteUser(req, res) {
+  const { id } = req.params;
+  const admin = req.admin;
+
+  if (admin.role === 'court_admin') {
+    throw new BizError(ErrorCode.FORBIDDEN, '球场方无权删除用户');
+  }
+
+  const user = await User.findByPk(id);
+  if (!user) {
+    throw new BizError(ErrorCode.NOT_FOUND, '用户不存在');
+  }
+
+  const { sequelize } = require('../models');
+  const t = await sequelize.transaction();
+  try {
+    // 1. 凑人/约战记录
+    const lfgPosts = await LfgPost.findAll({ where: { userId: id }, transaction: t });
+    const lfgIds = lfgPosts.map(p => p.id);
+    if (lfgIds.length > 0) {
+      await LfgJoin.destroy({ where: { lfgId: lfgIds }, transaction: t });
+      await LfgPost.destroy({ where: { id: lfgIds }, transaction: t });
+    }
+
+    // 2. 作为加入者参与的记录
+    await LfgJoin.destroy({ where: { userId: id }, transaction: t });
+
+    // 3. 球队成员
+    await TeamMember.destroy({ where: { userId: id }, transaction: t });
+
+    // 4. 订单
+    await Order.destroy({ where: { userId: id }, transaction: t });
+
+    // 5. 签到
+    await Checkin.destroy({ where: { userId: id }, transaction: t });
+
+    // 6. 球场方：删除其创建的球场
+    if (user.courtId) {
+      await Court.destroy({ where: { id: user.courtId }, transaction: t });
+    }
+
+    // 7. 最后删用户
+    await user.destroy({ transaction: t });
+
+    await t.commit();
+
+    logger.info(`[admin-users] user ${id} (${user.nickname}) deleted by admin ${admin.id} (${admin.role})`);
+    res.json(success({
+      id: Number(id),
+      deletedLfgPosts: lfgIds.length,
+      note: '用户及关联数据已全部清理'
+    }, '用户已删除'));
+  } catch (err) {
+    await t.rollback();
+    logger.error(`[admin-users] delete user ${id} failed:`, err);
+    throw err;
+  }
+}
+
 module.exports = {
   listUsers,
   getUserDetail,
-  updateUserStatus
+  updateUserStatus,
+  deleteUser
 };

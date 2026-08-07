@@ -59,7 +59,7 @@
       <el-table-column label="注册时间" width="170">
         <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
           <el-button size="small" link @click="viewDetail(row)">详情</el-button>
           <el-button
@@ -70,6 +70,15 @@
             @click="onToggleStatus(row)"
           >
             {{ row.status === 1 ? '禁用' : '启用' }}
+          </el-button>
+          <el-button
+            size="small"
+            link
+            type="danger"
+            :loading="deleting === row.id"
+            @click="onDelete(row)"
+          >
+            删除
           </el-button>
         </template>
       </el-table-column>
@@ -151,6 +160,7 @@ const page = ref(1);
 const pageSize = ref(20);
 const loading = ref(false);
 const toggling = ref(null);
+const deleting = ref(null);
 
 const detailVisible = ref(false);
 const detail = ref(null);
@@ -224,6 +234,38 @@ async function onToggleStatus(row) {
 onMounted(() => {
   loadList();
 });
+
+/**
+ * 【2026-08-07 新增】删除用户
+ * 二次确认,说明会级联删除关联数据
+ */
+async function onDelete(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除用户「${row.nickname}」？\n\n该操作会同时删除:\n• 他创建的所有凑人/约战记录\n• 他参与的加入记录\n• 他在球队中的成员身份\n• 他的订单和签到\n• 如是球场方,会同时删除他创建的球场\n\n【警告】删除后不可恢复,需重新走身份选择流程。`,
+      '⚠️ 删除用户',
+      {
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger'
+      }
+    );
+  } catch {
+    return; // 用户取消
+  }
+  deleting.value = row.id;
+  try {
+    const res = await userApi.delete(row.id);
+    ElMessage.success(res.message || '用户已删除');
+    // 重新拉列表
+    loadList();
+  } catch (err) {
+    ElMessage.error(err.message || '删除失败');
+  } finally {
+    deleting.value = null;
+  }
+}
 
 onActivated(() => {
   loadList();

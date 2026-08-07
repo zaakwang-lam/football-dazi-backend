@@ -84,5 +84,6 @@ router.post('/api/admin/orders/:id/cancel', adminAuth(), adminOrderCtrl.cancelOr
 router.get('/api/admin/users', adminAuth(), adminUsersCtrl.listUsers);
 router.get('/api/admin/users/:id', adminAuth(), adminUsersCtrl.getUserDetail);
 router.put('/api/admin/users/:id/status', adminAuth(['super_admin', 'ops']), adminUsersCtrl.updateUserStatus);
+router.delete('/api/admin/users/:id', adminAuth(['super_admin', 'ops']), adminUsersCtrl.deleteUser);
 
 module.exports = router;
