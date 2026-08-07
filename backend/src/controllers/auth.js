@@ -9,6 +9,20 @@ const logger = require('../utils/logger');
 const { success, fail, BizError, ErrorCode } = require('../utils/response');
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require('../utils/jwt');
 
+/** 从用户记录解析已注册身份；未手动选身份时 roles=[]，对外 role 置空（忽略 DB 默认值 user） */
+function resolveIdentity(user) {
+  const roles = Array.isArray(user.roles) ? user.roles.filter(Boolean) : [];
+  let role = '';
+  if (roles.length) {
+    role = (user.role && roles.includes(user.role)) ? user.role : roles[0];
+  }
+  return {
+    roles,
+    role,
+    registered: roles.length > 0
+  };
+}
+
 async function adminLogin(req, res) {
   const { username, password } = req.body;
   if (!username || !password) throw new BizError(ErrorCode.PARAM_INVALID, '请输入用户名和密码');
@@ -35,7 +49,14 @@ async function refreshToken(req, res) {
 async function userLogin(req, res) {
   const { code, userInfo } = req.body;
   if (!code) throw new BizError(ErrorCode.PARAM_INVALID, '缺少 code');
-  const sessionRes = await axios.get('https://api.weixin.qq.com/sns/jscode2session', { params: { appid: config.wechat.appid, secret: config.wechat.secret, js_code: code, grant_type: 'authorization_code' } });
+  const sessionRes = await axios.get('https://api.weixin.qq.com/sns/jscode2session', {
+    params: {
+      appid: config.wechat.appid,
+      secret: config.wechat.secret,
+      js_code: code,
+      grant_type: 'authorization_code'
+    }
+  });
   if (sessionRes.data.errcode) {
     logger.error(`微信登录失败: ${sessionRes.data.errmsg} (errcode=${sessionRes.data.errcode})`);
     return res.status(503).json(fail(503, `微信服务暂时不可用: ${sessionRes.data.errmsg || 'AppSecret 未配置'}`));
@@ -43,16 +64,36 @@ async function userLogin(req, res) {
   const { openid, unionid } = sessionRes.data;
   let user = await User.findOne({ where: { openid } });
   if (!user) {
-    user = await User.create({ openid, unionid, nickname: userInfo?.nickName || userInfo?.nickname || '微信用户', avatarUrl: userInfo?.avatarUrl || '', gender: userInfo?.gender || 0 });
+    // 仅建立微信身份，不写入 roles；等用户手动选择「个人 / 球场方」后再 register-role
+    user = await User.create({
+      openid,
+      unionid,
+      nickname: userInfo?.nickName || userInfo?.nickname || '微信用户',
+      avatarUrl: (userInfo?.avatarUrl && /^https?:\/\//i.test(userInfo.avatarUrl)) ? userInfo.avatarUrl : '',
+      gender: userInfo?.gender || 0,
+      roles: null
+    });
   } else if (userInfo) {
     if (userInfo.nickName || userInfo.nickname) user.nickname = userInfo.nickName || userInfo.nickname;
-    // 仅当传入的是可持久化的 http(s) 头像时才覆盖，避免把临时本地路径写进库
     if (userInfo.avatarUrl && /^https?:\/\//i.test(userInfo.avatarUrl)) user.avatarUrl = userInfo.avatarUrl;
     if (userInfo.gender !== undefined) user.gender = userInfo.gender;
     await user.save();
   }
   const accessToken = generateAccessToken({ id: user.id, openid: user.openid });
-  res.json(success({ accessToken, user: { id: user.id, nickname: user.nickname, avatarUrl: user.avatarUrl, phone: user.phone, role: user.role, roles: user.roles || [], courtId: user.courtId, registered: Array.isArray(user.roles) ? user.roles.length > 0 : false } }));
+  const identity = resolveIdentity(user);
+  res.json(success({
+    accessToken,
+    user: {
+      id: user.id,
+      nickname: user.nickname,
+      avatarUrl: user.avatarUrl,
+      phone: user.phone,
+      role: identity.role,
+      roles: identity.roles,
+      courtId: user.courtId,
+      registered: identity.registered
+    }
+  }));
 }
 
 /** POST /api/user/register-role */
@@ -62,7 +103,8 @@ async function registerRole(req, res) {
   if (!['user', 'court'].includes(role)) throw new BizError(ErrorCode.PARAM_INVALID, 'role 必须是 user 或 court');
   const user = await User.findByPk(userId);
   if (!user) throw new BizError(ErrorCode.NOT_FOUND, '用户不存在');
-  const currentRoles = Array.isArray(user.roles) ? [...user.roles] : (user.role && user.role !== 'user' ? [user.role] : []);
+  // 只认 roles 数组；DB 里 role 默认值 user 不代表已选身份
+  const currentRoles = Array.isArray(user.roles) ? [...user.roles].filter(Boolean) : [];
   if (currentRoles.includes(role)) throw new BizError(ErrorCode.FORBIDDEN, `已注册过 ${role} 角色`);
 
   if (role === 'court') {
@@ -142,15 +184,15 @@ async function registerRole(req, res) {
   }
 
   user.role = 'user';
-  user.courtId = null;
   user.roles = [...new Set([...currentRoles, 'user'])];
   await user.save();
-  return res.json(success({ role: 'user', roles: user.roles, courtId: null, message: '个人注册成功' }, '注册成功'));
+  return res.json(success({ role: 'user', roles: user.roles, courtId: user.courtId || null, message: '个人注册成功' }, '注册成功'));
 }
 
 async function getUserProfile(req, res) {
   const user = await User.findByPk(req.user.id);
   if (!user) throw new BizError(ErrorCode.NOT_FOUND, '用户不存在');
+  const identity = resolveIdentity(user);
   let court = null;
   if (user.courtId) {
     const { Court } = require('../models');
@@ -161,8 +203,9 @@ async function getUserProfile(req, res) {
     nickname: user.nickname,
     avatarUrl: user.avatarUrl,
     phone: user.phone,
-    role: user.role,
-    roles: user.roles || [],
+    role: identity.role,
+    roles: identity.roles,
+    registered: identity.registered,
     courtId: user.courtId,
     court: court && {
       id: court.id,
@@ -190,19 +233,19 @@ async function updateUserProfile(req, res) {
     if (cleanNick) user.nickname = cleanNick;
   }
   if (avatarUrl !== undefined && avatarUrl !== '') {
-    // 只接受可持久化的 http(s) 地址，拒绝微信临时本地路径
     if (/^https?:\/\//i.test(String(avatarUrl))) {
       user.avatarUrl = avatarUrl;
     }
   }
   await user.save();
+  const identity = resolveIdentity(user);
   res.json(success({
     id: user.id,
     nickname: user.nickname,
     avatarUrl: user.avatarUrl,
     phone: user.phone,
-    role: user.role,
-    roles: user.roles || [],
+    role: identity.role,
+    roles: identity.roles,
     courtId: user.courtId
   }));
 }
