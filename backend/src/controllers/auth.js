@@ -46,7 +46,8 @@ async function userLogin(req, res) {
     user = await User.create({ openid, unionid, nickname: userInfo?.nickName || userInfo?.nickname || '微信用户', avatarUrl: userInfo?.avatarUrl || '', gender: userInfo?.gender || 0 });
   } else if (userInfo) {
     if (userInfo.nickName || userInfo.nickname) user.nickname = userInfo.nickName || userInfo.nickname;
-    if (userInfo.avatarUrl) user.avatarUrl = userInfo.avatarUrl;
+    // 仅当传入的是可持久化的 http(s) 头像时才覆盖，避免把临时本地路径写进库
+    if (userInfo.avatarUrl && /^https?:\/\//i.test(userInfo.avatarUrl)) user.avatarUrl = userInfo.avatarUrl;
     if (userInfo.gender !== undefined) user.gender = userInfo.gender;
     await user.save();
   }
@@ -97,20 +98,53 @@ async function registerRole(req, res) {
     const { Court } = require('../models');
     let court;
     try {
-      court = await Court.create({ name: courtInfo.name, ownerId: userId, type: courtInfo.type, address: courtInfo.address, district: courtInfo.district, longitude: courtInfo.longitude ? Number(courtInfo.longitude) : null, latitude: courtInfo.latitude ? Number(courtInfo.latitude) : null, phone: courtInfo.phone || '', price: Number(courtInfo.price) || 0, openTime: courtInfo.openTime || '08:00:00', closeTime: courtInfo.closeTime || '22:00:00', surfaceType: surfaceTypes[0], surfaceTypes, openHours, description: courtInfo.description || '', status: 2 });
+      court = await Court.create({
+        name: courtInfo.name,
+        ownerId: userId,
+        type: courtInfo.type,
+        address: courtInfo.address,
+        district: courtInfo.district,
+        longitude: courtInfo.longitude ? Number(courtInfo.longitude) : null,
+        latitude: courtInfo.latitude ? Number(courtInfo.latitude) : null,
+        phone: courtInfo.phone || '',
+        price: Number(courtInfo.price) || 0,
+        openTime: courtInfo.openTime || '08:00:00',
+        closeTime: courtInfo.closeTime || '22:00:00',
+        surfaceType: surfaceTypes[0],
+        surfaceTypes,
+        openHours,
+        description: courtInfo.description || '',
+        status: 2
+      });
     } catch (err) {
       logger.error(`[registerRole:court] Court.create failed userId=${userId}: ${err.stack || err.message}`);
       const dbMessage = String(err.message || '数据库写入失败');
-      if (/Data truncated for column 'type'|Incorrect .* value for column 'type'|ER_TRUNCATED_WRONG_VALUE_FOR_FIELD/i.test(dbMessage)) throw new BizError(ErrorCode.PARAM_INVALID, `服务器数据库尚未同步新人制类型（${courtInfo.type}），请先执行数据库迁移后重试`);
-      if (/surface_types|open_hours|unknown column/i.test(dbMessage)) throw new BizError(ErrorCode.PARAM_INVALID, '服务器数据库结构未完成同步，请更新后端数据库后重试');
-      throw new BizError(ErrorCode.PARAM_INVALID, `球场信息保存失败：${dbMessage}`);
+      if (/Data truncated for column 'type'|Incorrect .* value for column 'type'|ER_TRUNCATED_WRONG_VALUE_FOR_FIELD/i.test(dbMessage)) {
+        throw new BizError(ErrorCode.PARAM_INVALID, `服务器数据库尚未同步新人制类型（${courtInfo.type}），请先执行数据库迁移后重试`);
+      }
+      if (/surface_types|open_hours|unknown column/i.test(dbMessage)) {
+        throw new BizError(ErrorCode.PARAM_INVALID, '服务器数据库结构未完成同步，请更新后端数据库后重试');
+      }
+      if (/foreign key constraint|Cannot add or update a child row/i.test(dbMessage)) {
+        throw new BizError(
+          ErrorCode.PARAM_INVALID,
+          '球场归属外键配置异常（owner_id 曾错误指向管理员表）。请重启后端以自动修复后重试；若仍失败请联系运维删除 courts.owner_id 外键。'
+        );
+      }
+      throw new BizError(ErrorCode.PARAM_INVALID, `球场信息保存失败：${dbMessage.slice(0, 180)}`);
     }
-    user.role = 'court'; user.courtId = court.id; user.roles = [...new Set([...currentRoles, 'user', 'court'])]; await user.save();
+    user.role = 'court';
+    user.courtId = court.id;
+    user.roles = [...new Set([...currentRoles, 'user', 'court'])];
+    await user.save();
     logger.info(`球场方注册: userId=${userId}, courtId=${court.id}, name=${court.name}`);
     return res.json(success({ role: 'court', roles: user.roles, courtId: court.id, courtStatus: 'pending', message: '球场已提交，请等待审核' }, '注册成功'));
   }
 
-  user.role = 'user'; user.courtId = null; user.roles = [...new Set([...currentRoles, 'user'])]; await user.save();
+  user.role = 'user';
+  user.courtId = null;
+  user.roles = [...new Set([...currentRoles, 'user'])];
+  await user.save();
   return res.json(success({ role: 'user', roles: user.roles, courtId: null, message: '个人注册成功' }, '注册成功'));
 }
 
@@ -118,18 +152,59 @@ async function getUserProfile(req, res) {
   const user = await User.findByPk(req.user.id);
   if (!user) throw new BizError(ErrorCode.NOT_FOUND, '用户不存在');
   let court = null;
-  if (user.courtId) { const { Court } = require('../models'); court = await Court.findByPk(user.courtId); }
-  res.json(success({ id: user.id, nickname: user.nickname, avatarUrl: user.avatarUrl, phone: user.phone, role: user.role, roles: user.roles || [], courtId: user.courtId, court: court && { id: court.id, name: court.name, address: court.address, district: court.district, type: court.type, surfaceType: court.surfaceType, surfaceTypes: court.surfaceTypes || [], status: court.status, openTime: court.openTime, closeTime: court.closeTime, openHours: court.openHours || null, createdAt: court.createdAt } }));
+  if (user.courtId) {
+    const { Court } = require('../models');
+    court = await Court.findByPk(user.courtId);
+  }
+  res.json(success({
+    id: user.id,
+    nickname: user.nickname,
+    avatarUrl: user.avatarUrl,
+    phone: user.phone,
+    role: user.role,
+    roles: user.roles || [],
+    courtId: user.courtId,
+    court: court && {
+      id: court.id,
+      name: court.name,
+      address: court.address,
+      district: court.district,
+      type: court.type,
+      surfaceType: court.surfaceType,
+      surfaceTypes: court.surfaceTypes || [],
+      status: court.status,
+      openTime: court.openTime,
+      closeTime: court.closeTime,
+      openHours: court.openHours || null,
+      createdAt: court.createdAt
+    }
+  }));
 }
 
 async function updateUserProfile(req, res) {
   const { nickname, avatarUrl } = req.body || {};
   const user = await User.findByPk(req.user.id);
   if (!user) throw new BizError(ErrorCode.NOT_FOUND, '用户不存在');
-  if (nickname !== undefined && nickname !== null) { const cleanNick = String(nickname).trim().slice(0, 20); if (cleanNick) user.nickname = cleanNick; }
-  if (avatarUrl !== undefined && avatarUrl !== '') user.avatarUrl = avatarUrl;
+  if (nickname !== undefined && nickname !== null) {
+    const cleanNick = String(nickname).trim().slice(0, 20);
+    if (cleanNick) user.nickname = cleanNick;
+  }
+  if (avatarUrl !== undefined && avatarUrl !== '') {
+    // 只接受可持久化的 http(s) 地址，拒绝微信临时本地路径
+    if (/^https?:\/\//i.test(String(avatarUrl))) {
+      user.avatarUrl = avatarUrl;
+    }
+  }
   await user.save();
-  res.json(success({ id: user.id, nickname: user.nickname, avatarUrl: user.avatarUrl, phone: user.phone, role: user.role, roles: user.roles || [], courtId: user.courtId }));
+  res.json(success({
+    id: user.id,
+    nickname: user.nickname,
+    avatarUrl: user.avatarUrl,
+    phone: user.phone,
+    role: user.role,
+    roles: user.roles || [],
+    courtId: user.courtId
+  }));
 }
 
 /** POST /api/v1/user/avatar - 接收小程序压缩后的 base64 头像 */
@@ -158,15 +233,36 @@ async function getAdminProfile(req, res) { res.json(success(req.admin)); }
 async function logout(req, res) { res.json(success(null, '已登出')); }
 
 async function getMyCourts(req, res) {
-  const userId = req.user.id; const { Court } = require('../models');
+  const userId = req.user.id;
+  const { Court } = require('../models');
   const courts = await Court.findAll({ where: { ownerId: userId, status: 1 }, order: [['created_at', 'DESC']] });
-  res.json(success({ list: courts.map(c => ({ id: c.id, name: c.name, type: c.type, district: c.district, address: c.address, longitude: c.longitude ? parseFloat(c.longitude) : null, latitude: c.latitude ? parseFloat(c.latitude) : null, phone: c.phone, price: parseFloat(c.price), surfaceType: c.surfaceType, surfaceTypes: c.surfaceTypes || [], openTime: c.openTime, closeTime: c.closeTime, openHours: c.openHours || null, description: c.description, status: c.status, rating: parseFloat(c.rating), createdAt: c.createdAt })), total: courts.length }));
+  res.json(success({
+    list: courts.map(c => ({
+      id: c.id, name: c.name, type: c.type, district: c.district, address: c.address,
+      longitude: c.longitude ? parseFloat(c.longitude) : null,
+      latitude: c.latitude ? parseFloat(c.latitude) : null,
+      phone: c.phone, price: parseFloat(c.price),
+      surfaceType: c.surfaceType, surfaceTypes: c.surfaceTypes || [],
+      openTime: c.openTime, closeTime: c.closeTime, openHours: c.openHours || null,
+      description: c.description, status: c.status, rating: parseFloat(c.rating), createdAt: c.createdAt
+    })),
+    total: courts.length
+  }));
 }
 
 async function getMyTeams(req, res) {
-  const userId = req.user.id; const { Team, TeamMember } = require('../models');
-  const memberships = await TeamMember.findAll({ where: { userId, status: 1 }, include: [{ model: Team, as: 'team', attributes: ['id', 'name', 'logo', 'district', 'motto', 'memberCount', 'attendance', 'wins', 'draws', 'losses', 'recruitment', 'level', 'founded'] }] });
-  const list = memberships.filter(m => m.team).map(m => ({ id: m.team.id, name: m.team.name, logo: m.team.logo, district: m.team.district, motto: m.team.motto, memberCount: m.team.memberCount, attendance: m.team.attendance, wins: m.team.attendance, draws: m.team.draws, losses: m.team.losses, recruitment: m.team.recruitment, level: m.team.level, founded: m.team.founded, role: m.role, joinedAt: m.createdAt }));
+  const userId = req.user.id;
+  const { Team, TeamMember } = require('../models');
+  const memberships = await TeamMember.findAll({
+    where: { userId, status: 1 },
+    include: [{ model: Team, as: 'team', attributes: ['id', 'name', 'logo', 'district', 'motto', 'memberCount', 'attendance', 'wins', 'draws', 'losses', 'recruitment', 'level', 'founded'] }]
+  });
+  const list = memberships.filter(m => m.team).map(m => ({
+    id: m.team.id, name: m.team.name, logo: m.team.logo, district: m.team.district, motto: m.team.motto,
+    memberCount: m.team.memberCount, attendance: m.team.attendance, wins: m.team.wins, draws: m.team.draws,
+    losses: m.team.losses, recruitment: m.team.recruitment, level: m.team.level, founded: m.team.founded,
+    role: m.role, joinedAt: m.createdAt
+  }));
   res.json(success({ list, total: list.length }));
 }
 
