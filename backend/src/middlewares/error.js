@@ -12,7 +12,7 @@ function errorHandler(err, req, res, next) {
 
   // Sequelize 验证错误
   if (err.name === 'SequelizeValidationError') {
-    const msg = err.errors[0]?.message || '数据验证失败';
+    const msg = err.errors?.[0]?.message || '数据验证失败';
     return res.status(400).json(fail(400, msg));
   }
 
@@ -21,14 +21,28 @@ function errorHandler(err, req, res, next) {
     return res.status(409).json(fail(409, '数据已存在'));
   }
 
+  // 外键约束失败（例如报名时 user_id / lfg_id 无效）
+  if (err.name === 'SequelizeForeignKeyConstraintError') {
+    logger.warn(`外键失败 ${req.method} ${req.path}: ${err.message}`);
+    return res.status(400).json(fail(400, '关联数据不存在或已失效，请刷新后重试'));
+  }
+
+  // 其它数据库错误：把关键信息带回，便于真机排查（截断避免过长）
+  if (err.name === 'SequelizeDatabaseError' || err.name === 'SequelizeDatabaseError') {
+    const raw = String(err.parent?.sqlMessage || err.message || '数据库错误');
+    logger.error(`数据库错误 [${req.method} ${req.path}]: ${raw}`);
+    return res.status(400).json(fail(400, `数据库错误：${raw.slice(0, 120)}`));
+  }
+
   // JWT 错误
-  if (err.name === 'JsonWebTokenError') {
-    return res.status(401).json(fail(401, 'Token 无效'));
+  if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+    return res.status(401).json(fail(401, 'Token 无效或已过期'));
   }
 
   // 其他未知错误
   logger.error(`未处理异常 [${req.method} ${req.path}]:`, err);
-  return res.status(500).json(fail(500, '服务器内部错误'));
+  const hint = err && err.message ? String(err.message).slice(0, 80) : '';
+  return res.status(500).json(fail(500, hint ? `服务器内部错误：${hint}` : '服务器内部错误'));
 }
 
 module.exports = errorHandler;
