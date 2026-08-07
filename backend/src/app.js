@@ -35,6 +35,17 @@ app.use(routes);
 app.use((req, res) => res.status(404).json(fail(404, `路径不存在: ${req.method} ${req.path}`)));
 app.use(errorHandler);
 
+// 生产库历史上把 courts.type 定义成 ENUM，新增 8/3 人制时容易因漏跑 migration 写入失败。
+// 启动时将该列规范化为 VARCHAR；允许值仍由 registerRole 的业务白名单控制。
+async function ensureCourtTypeColumn() {
+  try {
+    await sequelize.query("ALTER TABLE courts MODIFY COLUMN type VARCHAR(32) NOT NULL");
+    logger.info('✅ courts.type 已同步为 VARCHAR(32)');
+  } catch (err) {
+    logger.warn(`⚠️ courts.type 自动同步跳过: ${err.message}`);
+  }
+}
+
 async function start() {
   try {
     await testConnection();
@@ -42,6 +53,7 @@ async function start() {
       await sequelize.sync({ alter: true });
       logger.info('✅ 数据库表结构已同步');
     }
+    await ensureCourtTypeColumn();
     app.listen(config.port, () => {
       logger.info('🚀 「足球搭子」后端服务启动成功');
       logger.info(`📍 端口: ${config.port}`);
@@ -55,6 +67,6 @@ async function start() {
     process.exit(1);
   }
 }
-process.on('SIGTERM', async () => { await sequelize.close(); process.exit(0); });
+process.on('SIGTERM', async () => { await sequelize.close(); process.exit(1); });
 start();
 module.exports = app;
