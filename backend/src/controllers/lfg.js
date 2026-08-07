@@ -1,8 +1,9 @@
 // src/controllers/lfg.js
 // 凑人控制器
-const { LfgPost, LfgJoin, User, Team } = require('../models');
+const { LfgPost, LfgJoin, User, sequelize } = require('../models');
 const { success, fail, BizError, ErrorCode } = require('../utils/response');
 const { Op } = require('sequelize');
+const logger = require('../utils/logger');
 
 /**
  * GET /api/v1/lfg/list
@@ -11,8 +12,8 @@ const { Op } = require('sequelize');
 async function getLfgList(req, res) {
   const { type, district, page = 1, pageSize = 10 } = req.query;
 
-  const where = { status: { [Op.in]: ['open', 'full'] } };  // 不显示 closed/finished
-  if (type && type !== 'all') where.type = type;  // 兼容 'sub' / 'war'
+  const where = { status: { [Op.in]: ['open', 'full'] } };
+  if (type && type !== 'all') where.type = type;
 
   const { rows, count } = await LfgPost.findAndCountAll({
     where,
@@ -28,10 +29,10 @@ async function getLfgList(req, res) {
     list: rows.map(l => ({
       id: l.id,
       type: l.type,
-      matchTypes: l.matchTypes || [],  // 人制多选（2026-07-28 新增）
+      matchTypes: l.matchTypes || [],
       title: l.title || `${l.location} ${l.type}`,
       location: l.location,
-      fee: l.fee !== null && l.fee !== undefined ? parseFloat(l.fee) : null,  // 人均费用（2026-07-28 新增）
+      fee: l.fee !== null && l.fee !== undefined ? parseFloat(l.fee) : null,
       playTime: l.playTime,
       needCount: l.needCount,
       joinedCount: l.joinedCount,
@@ -58,7 +59,6 @@ async function publishLfg(req, res) {
     throw new BizError(ErrorCode.PARAM_INVALID, '请填写完整信息');
   }
 
-  // 人制多选校验（2026-07-28 新增）
   const ALLOWED_MATCH_TYPES = ['11人制', '7人制', '5人制'];
   let normalizedMatchTypes = null;
   if (matchTypes && Array.isArray(matchTypes) && matchTypes.length > 0) {
@@ -72,10 +72,10 @@ async function publishLfg(req, res) {
     userId,
     teamId: teamId || null,
     type,
-    matchTypes: normalizedMatchTypes,  // 人制多选（2026-07-28 新增）
+    matchTypes: normalizedMatchTypes,
     title,
     location,
-    fee: fee !== undefined && fee !== null && fee !== '' ? Number(fee) : null,  // 人均费用（2026-07-28 新增）
+    fee: fee !== undefined && fee !== null && fee !== '' ? Number(fee) : null,
     playTime,
     needCount: Number(needCount) || 1,
     level: level || '业余',
@@ -91,55 +91,101 @@ async function publishLfg(req, res) {
 
 /**
  * POST /api/v1/lfg/:id/join
- * 报名加入
+ * 报名加入（约战 / 凑人）
  */
 async function joinLfg(req, res) {
-  const { id } = req.params;
-  const userId = req.user.id;
+  const lfgId = Number(req.params.id);
+  const userId = Number(req.user && req.user.id);
 
-  const post = await LfgPost.findByPk(id);
-  if (!post) {
-    throw new BizError(ErrorCode.NOT_FOUND, '信息不存在');
+  if (!lfgId || Number.isNaN(lfgId)) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '无效的组队 ID');
   }
-  if (post.status !== 'open') {
-    throw new BizError(ErrorCode.CONFLICT, '该信息已关闭');
-  }
-
-  // 检查是否已报名
-  const existed = await LfgJoin.findOne({ where: { lfgId: id, userId } });
-  if (existed) {
-    throw new BizError(ErrorCode.CONFLICT, '您已报名');
+  if (!userId || Number.isNaN(userId)) {
+    throw new BizError(ErrorCode.UNAUTHORIZED, '请先登录');
   }
 
-  await LfgJoin.create({
-    lfgId: id,
-    userId,
-    status: 'pending'
-  });
+  try {
+    await sequelize.transaction(async (t) => {
+      const post = await LfgPost.findByPk(lfgId, {
+        transaction: t,
+        lock: t.LOCK.UPDATE
+      });
+      if (!post) {
+        throw new BizError(ErrorCode.NOT_FOUND, '信息不存在');
+      }
+      if (post.status !== 'open') {
+        throw new BizError(
+          ErrorCode.CONFLICT,
+          post.status === 'full' ? '该组队已满员' : '该信息已关闭'
+        );
+      }
+      if (Number(post.userId) === userId) {
+        throw new BizError(ErrorCode.FORBIDDEN, '不能加入自己发起的组队');
+      }
 
-  // 更新报名人数
-  post.joinedCount += 1;
-  if (post.joinedCount >= post.needCount) {
-    post.status = 'full';
+      const existed = await LfgJoin.findOne({
+        where: { lfgId, userId },
+        transaction: t
+      });
+      if (existed) {
+        throw new BizError(ErrorCode.CONFLICT, '您已报名');
+      }
+
+      // 确认用户存在，避免外键失败变成 500
+      const user = await User.findByPk(userId, { transaction: t });
+      if (!user) {
+        throw new BizError(ErrorCode.UNAUTHORIZED, '用户不存在，请重新登录');
+      }
+
+      await LfgJoin.create({
+        lfgId,
+        userId,
+        status: 'pending'
+      }, { transaction: t });
+
+      const nextJoined = Math.max(0, Number(post.joinedCount) || 0) + 1;
+      post.joinedCount = nextJoined;
+      if (nextJoined >= (Number(post.needCount) || 1)) {
+        post.status = 'full';
+      }
+      await post.save({ transaction: t });
+    });
+  } catch (err) {
+    if (err && err.isBizError) throw err;
+
+    logger.error(`[joinLfg] lfgId=${lfgId} userId=${userId}: ${err.stack || err.message}`);
+
+    const msg = String(err.message || '');
+    if (/foreign key constraint|Cannot add or update a child row/i.test(msg)) {
+      throw new BizError(ErrorCode.PARAM_INVALID, '报名关联失败，请确认组队仍存在后重试');
+    }
+    if (/Duplicate entry|ER_DUP_ENTRY/i.test(msg)) {
+      throw new BizError(ErrorCode.CONFLICT, '您已报名');
+    }
+    if (/Unknown column|doesn't exist|ER_NO_SUCH_TABLE/i.test(msg)) {
+      throw new BizError(ErrorCode.PARAM_INVALID, '报名表结构未同步，请联系运维执行数据库迁移');
+    }
+    if (/Data truncated|Incorrect .* value/i.test(msg)) {
+      throw new BizError(ErrorCode.PARAM_INVALID, '报名状态字段异常，请联系运维检查 lfg_joins.status');
+    }
+    throw new BizError(ErrorCode.PARAM_INVALID, `报名失败：${msg.slice(0, 120)}`);
   }
-  await post.save();
 
   res.json(success(null, '报名成功'));
 }
 
 /**
  * POST /api/v1/lfg/:id/quit
- * 退出组队（2026-07-28 新增）
- * 规则:
- *   - 仅发起者本人可退出自己已加入的组队
- *   - 仅状态为 open / full 可退出（closed/finished 不可退出）
- *   - 退出后 joinedCount -1，status 回到 open
  */
 async function quitLfg(req, res) {
-  const { id } = req.params;
-  const userId = req.user.id;
+  const lfgId = Number(req.params.id);
+  const userId = Number(req.user && req.user.id);
 
-  const post = await LfgPost.findByPk(id);
+  if (!lfgId || Number.isNaN(lfgId)) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '无效的组队 ID');
+  }
+
+  const post = await LfgPost.findByPk(lfgId);
   if (!post) {
     throw new BizError(ErrorCode.NOT_FOUND, '信息不存在');
   }
@@ -148,23 +194,19 @@ async function quitLfg(req, res) {
     throw new BizError(ErrorCode.CONFLICT, '该信息已关闭，不可退出');
   }
 
-  // 不能退出自己发起的组队（创建者）
-  if (post.userId === userId) {
+  if (Number(post.userId) === userId) {
     throw new BizError(ErrorCode.FORBIDDEN, '您是发起者，不能退出');
   }
 
-  // 查找报名记录
-  const join = await LfgJoin.findOne({ where: { lfgId: id, userId } });
+  const join = await LfgJoin.findOne({ where: { lfgId, userId } });
   if (!join) {
     throw new BizError(ErrorCode.NOT_FOUND, '您未报名该组队');
   }
 
-  // 事务：删 join + 更新计数 + status 回退
-  const { sequelize } = require('../models');
   await sequelize.transaction(async (t) => {
     await join.destroy({ transaction: t });
-    post.joinedCount = Math.max(0, post.joinedCount - 1);
-    if (post.status === 'full' && post.joinedCount < post.needCount) {
+    post.joinedCount = Math.max(0, (Number(post.joinedCount) || 0) - 1);
+    if (post.status === 'full' && post.joinedCount < (Number(post.needCount) || 1)) {
       post.status = 'open';
     }
     await post.save({ transaction: t });
@@ -178,16 +220,7 @@ async function quitLfg(req, res) {
 }
 
 /**
- * GET /api/v1/lfg/:id
- * 凑人/约战详情
- */
-/**
  * GET /api/user/me/lfg-posts?type=created|joined|all
- * 「我的」-我发起的/我加入的 组队列表（2026-07-28 新增）
- * type:
- *   - created: 仅作为发起者 (LfgPost.userId = userId)
- *   - joined: 仅作为参与者 (LfgJoin.userId = userId 且 status != withdrawn)
- *   - all（默认）: created + joined 合并
  */
 async function getMyLfgPosts(req, res) {
   const userId = req.user.id;
@@ -196,7 +229,6 @@ async function getMyLfgPosts(req, res) {
   let posts = [];
 
   if (type === 'created' || type === 'all') {
-    // 我发起的
     const createdPosts = await LfgPost.findAll({
       where: { userId },
       include: [
@@ -209,9 +241,11 @@ async function getMyLfgPosts(req, res) {
   }
 
   if (type === 'joined' || type === 'all') {
-    // 我加入的：查 LfgJoin，再连 LfgPost
     const joins = await LfgJoin.findAll({
-      where: { userId, status: { [Op.ne]: 'withdrawn' } },
+      where: {
+        userId,
+        status: { [Op.in]: ['pending', 'confirmed'] }
+      },
       include: [{
         model: LfgPost,
         as: 'post',
@@ -222,7 +256,6 @@ async function getMyLfgPosts(req, res) {
       order: [['created_at', 'DESC']],
       limit: 100
     });
-    // 去重（同一 post 可能不允许重复 join，但保险起见）
     const seen = new Set(posts.map(p => p.id));
     const joinedPosts = joins
       .filter(j => j.post && !seen.has(j.post.id))
@@ -230,7 +263,6 @@ async function getMyLfgPosts(req, res) {
     posts = posts.concat(joinedPosts);
   }
 
-  // 格式化返回字段（与 getLfgList 一致）
   const list = posts.map(p => ({
     id: p.id,
     type: p.type,
@@ -246,7 +278,7 @@ async function getMyLfgPosts(req, res) {
     description: p.description,
     status: p.status,
     publisher: p.publisher,
-    role: p._role,  // creator / joiner，区分发起 vs 加入
+    role: p._role,
     createdAt: p.createdAt
   }));
 
@@ -262,7 +294,7 @@ async function getLfgDetail(req, res) {
   const post = await LfgPost.findByPk(id, {
     include: [
       { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'] },
-      { model: LfgJoin, as: 'joins', attributes: ['id', 'userId', 'status'] }
+      { model: LfgJoin, as: 'joins', attributes: ['id', 'userId', 'status', 'created_at'] }
     ]
   });
 
@@ -270,13 +302,19 @@ async function getLfgDetail(req, res) {
     throw new BizError(ErrorCode.NOT_FOUND, '信息不存在');
   }
 
+  const joins = (post.joins || []).map(j => ({
+    id: j.id,
+    userId: j.userId,
+    status: j.status
+  }));
+
   res.json(success({
     id: post.id,
     type: post.type,
-    matchTypes: post.matchTypes || [],  // 人制多选（2026-07-28 新增）
+    matchTypes: post.matchTypes || [],
     title: post.title,
     location: post.location,
-    fee: post.fee !== null && post.fee !== undefined ? parseFloat(post.fee) : null,  // 人均费用（2026-07-28 新增）
+    fee: post.fee !== null && post.fee !== undefined ? parseFloat(post.fee) : null,
     playTime: post.playTime,
     needCount: post.needCount,
     joinedCount: post.joinedCount,
@@ -285,7 +323,8 @@ async function getLfgDetail(req, res) {
     description: post.description,
     status: post.status,
     publisher: post.publisher,
-    joinCount: post.joins ? post.joins.length : 0,
+    joins,
+    joinCount: joins.length,
     createdAt: post.createdAt
   }));
 }
@@ -296,5 +335,5 @@ module.exports = {
   publishLfg,
   joinLfg,
   quitLfg,
-  getMyLfgPosts  // 2026-07-28 新增
+  getMyLfgPosts
 };
