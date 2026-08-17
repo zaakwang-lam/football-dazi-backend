@@ -47,6 +47,7 @@ router.post('/api/v1/user/avatar', userAuth(), authCtrl.uploadAvatar);
 router.post('/api/user/register-role', userAuth(), authCtrl.registerRole);
 router.get('/api/user/me/courts', userAuth(), authCtrl.getMyCourts);
 router.put('/api/user/me/courts/:id', userAuth(), authCtrl.updateMyCourt);
+router.post('/api/user/me/courts/:id/image', userAuth(), authCtrl.uploadCourtImage);
 router.get('/api/user/me/teams', userAuth(), authCtrl.getMyTeams);
 router.get('/api/user/me/lfg-posts', userAuth(), lfgCtrl.getMyLfgPosts);
 

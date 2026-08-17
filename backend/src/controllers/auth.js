@@ -162,6 +162,7 @@ async function getUserProfile(req, res) {
       id: court.id, name: court.name, address: court.address, district: court.district,
       type: court.type, types: court.types || (court.type ? [court.type] : []),
       surfaceType: court.surfaceType, surfaceTypes: court.surfaceTypes || [],
+      images: court.images || [],
       status: court.status, phone: court.phone, price: court.price != null ? parseFloat(court.price) : null,
       openTime: court.openTime, closeTime: court.closeTime, openHours: court.openHours || null,
       description: court.description, createdAt: court.createdAt
@@ -230,6 +231,8 @@ async function getMyCourts(req, res) {
       latitude: c.latitude ? parseFloat(c.latitude) : null,
       phone: c.phone, price: c.price != null ? parseFloat(c.price) : 0,
       surfaceType: c.surfaceType, surfaceTypes: c.surfaceTypes || [],
+      images: Array.isArray(c.images) ? c.images : [],
+      coverUrl: Array.isArray(c.images) && c.images[0] ? c.images[0] : '',
       openTime: c.openTime, closeTime: c.closeTime, openHours: c.openHours || null,
       description: c.description, status: c.status,
       rating: c.rating != null ? parseFloat(c.rating) : 0,
@@ -254,7 +257,7 @@ async function updateMyCourt(req, res) {
   const body = req.body || {};
   const ALLOWED_TYPES = ['11人制', '8人制', '7人制', '5人制', '3人制'];
   const allowed = ['name', 'address', 'district', 'type', 'types', 'phone', 'price', 'openTime', 'closeTime',
-    'description', 'surfaceType', 'surfaceTypes', 'openHours', 'longitude', 'latitude'];
+    'description', 'surfaceType', 'surfaceTypes', 'openHours', 'longitude', 'latitude', 'images'];
   for (const key of allowed) {
     if (body[key] === undefined) continue;
     if (key === 'price') court.price = Number(body.price) || 0;
@@ -265,10 +268,12 @@ async function updateMyCourt(req, res) {
         court.types = types;
         court.type = types[0];
       }
+    } else if (key === 'images') {
+      const imgs = Array.isArray(body.images) ? body.images.filter(u => typeof u === 'string' && /^https?:\/\//i.test(u)).slice(0, 1) : [];
+      court.images = imgs;
     } else court[key] = body[key];
   }
 
-  // 改营业中内容后保持营业；审核中/拒绝后修改可再次进审核
   if (court.status === 3) court.status = 2;
   await court.save();
 
@@ -277,11 +282,51 @@ async function updateMyCourt(req, res) {
     name: court.name,
     type: court.type,
     types: court.types || [court.type],
+    images: court.images || [],
     phone: court.phone,
     price: court.price != null ? parseFloat(court.price) : 0,
     status: court.status,
     description: court.description
   }, '保存成功'));
+}
+
+/**
+ * POST /api/user/me/courts/:id/image
+ * 球场方上传一张球场图片（覆盖 images[0]）
+ */
+async function uploadCourtImage(req, res) {
+  const userId = Number(req.user.id);
+  const courtId = Number(req.params.id);
+  const { base64, mimeType = 'image/jpeg' } = req.body || {};
+  if (!base64 || typeof base64 !== 'string') throw new BizError(ErrorCode.PARAM_INVALID, '缺少图片');
+  if (base64.length > 4 * 1024 * 1024) throw new BizError(ErrorCode.PARAM_INVALID, '图片过大，请压缩后重试');
+
+  const { Court } = require('../models');
+  const court = await Court.findByPk(courtId);
+  if (!court) throw new BizError(ErrorCode.NOT_FOUND, '球场不存在');
+  if (Number(court.ownerId) !== userId) throw new BizError(ErrorCode.FORBIDDEN, '只能编辑自己的球场');
+
+  const cleanBase64 = base64.replace(/^data:image\/[^;]+;base64,/, '');
+  const buffer = Buffer.from(cleanBase64, 'base64');
+  if (!buffer.length || buffer.length > 3 * 1024 * 1024) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '图片过大，请压缩后重试');
+  }
+  const ext = String(mimeType).toLowerCase().includes('png') ? 'png' : 'jpg';
+  const uploadDir = path.join(__dirname, '../../uploads/courts');
+  fs.mkdirSync(uploadDir, { recursive: true });
+  const fileName = `${courtId}_${userId}_${Date.now()}.${ext}`;
+  fs.writeFileSync(path.join(uploadDir, fileName), buffer);
+  const publicBase = process.env.PUBLIC_BASE_URL || 'https://footballdazi.cn';
+  const imageUrl = `${publicBase.replace(/\/$/, '')}/uploads/courts/${fileName}`;
+
+  court.images = [imageUrl];
+  await court.save();
+
+  res.json(success({
+    id: court.id,
+    imageUrl,
+    images: court.images
+  }, '球场图片已更新'));
 }
 
 async function getMyTeams(req, res) {
@@ -303,5 +348,5 @@ async function getMyTeams(req, res) {
 
 module.exports = {
   adminLogin, refreshToken, userLogin, registerRole, getUserProfile, updateUserProfile,
-  uploadAvatar, getMyCourts, updateMyCourt, getMyTeams, getAdminProfile, logout
+  uploadAvatar, uploadCourtImage, getMyCourts, updateMyCourt, getMyTeams, getAdminProfile, logout
 };
