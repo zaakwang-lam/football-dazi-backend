@@ -18,7 +18,9 @@ export const dashboardApi = {
   overview: () => request.get('/admin/dashboard/overview'),
   revenue: (params) => request.get('/admin/dashboard/revenue', { params }),
   topCourts: (params) => request.get('/admin/dashboard/courts', { params }),
-  courtDashboard: () => request.get('/admin/courts/dashboard')
+  courtDashboard: () => request.get('/admin/courts/dashboard'),
+  orderDetails: (params) => request.get('/admin/dashboard/orders', { params }),
+  lfgDetails: (params) => request.get('/admin/dashboard/lfg', { params })
 };
 
 export const userApi = {

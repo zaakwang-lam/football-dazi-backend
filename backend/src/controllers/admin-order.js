@@ -8,7 +8,6 @@ async function resolveCourtIdsForAdmin(admin) {
   if (admin.role !== 'court_admin') return null;
   const ids = [];
   if (admin.courtId) ids.push(Number(admin.courtId));
-  // 小程序球场方：名下所有球场
   if (admin.id) {
     const owned = await Court.findAll({
       where: { ownerId: admin.id },
@@ -31,8 +30,20 @@ async function listOrders(req, res) {
   if (courtIds) where.courtId = { [Op.in]: courtIds };
 
   if (status && status !== 'all') where.status = status;
-  if (startDate) where.created_at = { ...(where.created_at || {}), [Op.gte]: startDate };
-  if (endDate) where.created_at = { ...(where.created_at || {}), [Op.lte]: endDate };
+
+  if (startDate || endDate) {
+    where.created_at = {};
+    if (startDate) {
+      const s = new Date(startDate);
+      s.setHours(0, 0, 0, 0);
+      where.created_at[Op.gte] = s;
+    }
+    if (endDate) {
+      const e = new Date(endDate);
+      e.setHours(23, 59, 59, 999);
+      where.created_at[Op.lte] = e;
+    }
+  }
 
   const offset = (Number(page) - 1) * Number(pageSize);
   const { rows, count } = await Order.findAndCountAll({
