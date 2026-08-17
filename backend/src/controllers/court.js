@@ -20,42 +20,75 @@ function pickCover(images) {
 }
 
 async function getNearbyCourts(req, res) {
-  const { longitude, latitude, type, page = 1, pageSize = 10, radiusKm = 50 } = req.query;
+  const {
+    longitude, latitude, type,
+    page = 1, pageSize = 20,
+    radiusKm = 50,
+    keyword = ''
+  } = req.query;
+
   const where = { status: 1 };
-  const offset = (Number(page) - 1) * Number(pageSize);
+  const kw = String(keyword || '').trim();
+  if (kw) {
+    where[Op.or] = [
+      { name: { [Op.like]: `%${kw}%` } },
+      { address: { [Op.like]: `%${kw}%` } },
+      { district: { [Op.like]: `%${kw}%` } }
+    ];
+  }
+
+  const limit = Math.min(Number(pageSize) || 20, 50);
+  const offset = (Number(page) - 1) * limit;
   const { rows } = await Court.findAndCountAll({
-    where, limit: Number(pageSize) * 3, offset, order: [['rating', 'DESC']]
+    where,
+    limit: limit * 3,
+    offset,
+    order: [['rating', 'DESC']]
   });
+
   const userLng = longitude ? Number(longitude) : null;
   const userLat = latitude ? Number(latitude) : null;
+
   let list = rows.map(c => {
     const types = Array.isArray(c.types) && c.types.length ? c.types : (c.type ? [c.type] : []);
-    const dist = (userLat && userLng)
+    const dist = (userLat && userLng && c.latitude && c.longitude)
       ? calcDistance(userLat, userLng, Number(c.latitude), Number(c.longitude)) : null;
     const images = Array.isArray(c.images) ? c.images : [];
     return {
       id: c.id, name: c.name, type: c.type, types,
       price: parseFloat(c.price),
-      address: c.address, rating: parseFloat(c.rating),
+      address: c.address,
+      district: c.district || '',
+      rating: parseFloat(c.rating),
       longitude: c.longitude, latitude: c.latitude,
-      openTime: c.openTime, distance: dist ? Number(dist.toFixed(1)) : 0,
+      openTime: c.openTime,
+      distance: dist != null ? Number(dist.toFixed(1)) : null,
       images,
       coverUrl: pickCover(images),
       tags: c.tags || [],
       freeSlots: [],
-      distanceKm: dist ? Number(dist.toFixed(2)) : null
+      distanceKm: dist != null ? Number(dist.toFixed(2)) : null
     };
   });
+
   if (type && type !== 'all') {
     list = list.filter(c => (c.types || []).includes(type) || c.type === type);
   }
+
   if (userLat && userLng) {
-    list.sort((a, b) => (a.distanceKm || 999) - (b.distanceKm || 999));
-    list = list.filter(c => !c.distanceKm || c.distanceKm <= Number(radiusKm));
+    list.sort((a, b) => {
+      const da = a.distanceKm != null ? a.distanceKm : 9999;
+      const db = b.distanceKm != null ? b.distanceKm : 9999;
+      return da - db;
+    });
+    // 有坐标的按半径过滤；无坐标的球场仍保留（避免老数据被藏掉）
+    list = list.filter(c => c.distanceKm == null || c.distanceKm <= Number(radiusKm));
   }
-  list = list.slice(0, Number(pageSize));
+
+  list = list.slice(0, limit);
   res.json(success({
-    list, total: list.length,
+    list,
+    total: list.length,
     userLocation: userLat && userLng ? { latitude: userLat, longitude: userLng } : null,
     coordinateSystem: 'GCJ-02'
   }));
