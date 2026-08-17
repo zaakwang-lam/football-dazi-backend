@@ -1,7 +1,6 @@
 // src/controllers/team.js
 const { Team, TeamMember, User, Checkin } = require('../models');
 const { success, fail, BizError, ErrorCode } = require('../utils/response');
-const { Op } = require('sequelize');
 
 async function getTeamList(req, res) {
   const { district, page = 1, pageSize = 10 } = req.query;
@@ -53,13 +52,12 @@ async function getTeamDetail(req, res) {
     memberCount: team.memberCount, attendance: team.attendance,
     wins: team.wins, draws: team.draws, losses: team.losses,
     recruitment: team.recruitment, founded: team.founded,
-    memberList: (team.teamMembers || []).filter(m => m.status !== 0).map(m => ({
+    memberList: (team.teamMembers || []).filter(m => Number(m.status) !== 0).map(m => ({
       id: m.userId, nickname: m.user?.nickname, avatarUrl: m.user?.avatarUrl, role: m.role
     }))
   }));
 }
 
-/** POST /api/v1/teams/:id/join */
 async function joinTeam(req, res) {
   const teamId = req.params.id;
   const userId = req.user.id;
@@ -69,15 +67,15 @@ async function joinTeam(req, res) {
     throw new BizError(ErrorCode.FORBIDDEN, '该球队暂不招人');
   }
   const existed = await TeamMember.findOne({ where: { teamId, userId } });
-  if (existed && existed.status === 1) {
+  if (existed && Number(existed.status) === 1) {
     throw new BizError(ErrorCode.CONFLICT, '您已是球队成员');
   }
   if (existed) {
     existed.status = 1;
-    existed.role = existed.role || 'member';
+    if (!existed.role || existed.role === 'member') existed.role = 'player';
     await existed.save();
   } else {
-    await TeamMember.create({ teamId, userId, role: 'member', status: 1 });
+    await TeamMember.create({ teamId, userId, role: 'player', status: 1 });
   }
   const count = await TeamMember.count({ where: { teamId, status: 1 } });
   await team.update({ memberCount: count });
@@ -92,9 +90,7 @@ async function checkin(req, res) {
   if (!team) throw new BizError(ErrorCode.NOT_FOUND, '球队不存在');
   const member = await TeamMember.findOne({ where: { teamId: id, userId, status: 1 } });
   if (!member) throw new BizError(ErrorCode.FORBIDDEN, '不是球队成员');
-  await Checkin.create({
-    teamId: id, userId, longitude, latitude, status: 'normal'
-  });
+  await Checkin.create({ teamId: id, userId, longitude, latitude, status: 'normal' });
   res.json(success(null, '打卡成功'));
 }
 
