@@ -28,6 +28,7 @@ router.get('/api/v1/courts/:id', courtCtrl.getCourtDetail);
 router.get('/api/v1/courts/:id/schedule', courtCtrl.getCourtSchedule);
 router.get('/api/v1/courts/:id/free-slots', courtCtrl.getFreeSlots);
 router.post('/api/v1/courts/:id/free-slots', userAuth(), courtCtrl.publishFreeSlots);
+router.post('/api/v1/courts/:id/evaluate', userAuth(), courtCtrl.evaluateCourt);
 router.get('/api/v1/lfg/list', lfgCtrl.getLfgList);
 router.get('/api/v1/lfg/:id', lfgCtrl.getLfgDetail);
 router.post('/api/v1/lfg', userAuth(), lfgCtrl.publishLfg);
@@ -36,6 +37,7 @@ router.post('/api/v1/lfg/:id/quit', userAuth(), lfgCtrl.quitLfg);
 router.get('/api/v1/teams', teamCtrl.getTeamList);
 router.post('/api/v1/teams', userAuth(), teamCtrl.createTeam);
 router.get('/api/v1/teams/:id', teamCtrl.getTeamDetail);
+router.post('/api/v1/teams/:id/join', userAuth(), teamCtrl.joinTeam);
 router.post('/api/v1/teams/:id/checkin', userAuth(), teamCtrl.checkin);
 
 router.get('/api/user/profile', userAuth(), authCtrl.getUserProfile);
