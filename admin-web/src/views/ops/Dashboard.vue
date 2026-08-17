@@ -10,10 +10,10 @@
         </div>
       </el-col>
       <el-col :span="4">
-        <div class="metric-card">
+        <div class="metric-card metric-clickable" @click="openOrderDetail">
           <div class="metric-label">📋 今日订单</div>
           <div class="metric-value">{{ overview.todayOrders ?? '—' }}</div>
-          <div class="metric-extra">今日创建 (含所有状态)</div>
+          <div class="metric-extra">点击查看明细 / 历史 ›</div>
         </div>
       </el-col>
       <el-col :span="4">
@@ -31,10 +31,10 @@
         </div>
       </el-col>
       <el-col :span="4">
-        <div class="metric-card">
+        <div class="metric-card metric-clickable" @click="openLfgDetail">
           <div class="metric-label">⚽ 今日组队</div>
           <div class="metric-value">{{ overview.todayLfg ?? '—' }}</div>
-          <div class="metric-extra">凑人/约战发布数</div>
+          <div class="metric-extra">点击查看明细 / 历史 ›</div>
         </div>
       </el-col>
       <el-col :span="4">
@@ -46,7 +46,7 @@
       </el-col>
     </el-row>
 
-    <!-- 待处理订单（2026-07-31 新增） -->
+    <!-- 待处理订单 -->
     <el-row style="margin-top: 20px;">
       <el-col :span="24">
         <div class="page-card">
@@ -148,6 +148,131 @@
         </div>
       </el-col>
     </el-row>
+
+    <!-- 订单明细弹窗（含历史） -->
+    <el-dialog v-model="orderDlgVisible" title="订单明细" width="960px" destroy-on-close>
+      <div class="dlg-toolbar">
+        <el-date-picker
+          v-model="orderDateRange"
+          type="daterange"
+          range-separator="至"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          value-format="YYYY-MM-DD"
+          :clearable="false"
+          @change="loadOrderDetails"
+        />
+        <el-select v-model="orderStatus" style="width: 140px; margin-left: 12px;" @change="loadOrderDetails">
+          <el-option label="全部状态" value="all" />
+          <el-option label="待支付" value="pending" />
+          <el-option label="已预订" value="booked" />
+          <el-option label="已支付" value="paid" />
+          <el-option label="已完成" value="completed" />
+          <el-option label="已取消" value="canceled" />
+        </el-select>
+        <el-button style="margin-left: 12px;" @click="setOrderRangeToday">今日</el-button>
+        <el-button @click="setOrderRangeDays(7)">近7天</el-button>
+        <el-button @click="setOrderRangeDays(30)">近30天</el-button>
+      </div>
+      <el-table :data="orderDetailList" stripe v-loading="orderDetailLoading" max-height="480" style="margin-top: 12px;">
+        <el-table-column prop="orderNo" label="订单号" width="170" />
+        <el-table-column label="用户" width="110">
+          <template #default="{ row }">{{ row.user?.nickname || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="球场" min-width="140">
+          <template #default="{ row }">{{ row.court?.name || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="时段" width="180">
+          <template #default="{ row }">
+            <span v-if="row.schedule">{{ row.schedule.date }} {{ row.schedule.timeSlot }}</span>
+            <span v-else>—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="金额" width="90">
+          <template #default="{ row }">¥{{ row.amount }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">{{ statusMap[row.status] || row.status }}</template>
+        </el-table-column>
+        <el-table-column label="下单时间" width="160">
+          <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+        </el-table-column>
+        <template #empty>
+          <div style="padding: 24px; color: #999;">该时段暂无订单</div>
+        </template>
+      </el-table>
+      <div style="margin-top: 12px; text-align: right;" v-if="orderDetailTotal > 0">
+        <el-pagination
+          v-model:current-page="orderPage"
+          v-model:page-size="orderPageSize"
+          :total="orderDetailTotal"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          @size-change="loadOrderDetails"
+          @current-change="loadOrderDetails"
+        />
+      </div>
+    </el-dialog>
+
+    <!-- 组队明细弹窗（含历史） -->
+    <el-dialog v-model="lfgDlgVisible" title="组队明细（凑人 / 约战）" width="960px" destroy-on-close>
+      <div class="dlg-toolbar">
+        <el-date-picker
+          v-model="lfgDateRange"
+          type="daterange"
+          range-separator="至"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          value-format="YYYY-MM-DD"
+          :clearable="false"
+          @change="loadLfgDetails"
+        />
+        <el-select v-model="lfgType" style="width: 120px; margin-left: 12px;" @change="loadLfgDetails">
+          <el-option label="全部类型" value="all" />
+          <el-option label="凑人" value="sub" />
+          <el-option label="约战" value="war" />
+        </el-select>
+        <el-button style="margin-left: 12px;" @click="setLfgRangeToday">今日</el-button>
+        <el-button @click="setLfgRangeDays(7)">近7天</el-button>
+        <el-button @click="setLfgRangeDays(30)">近30天</el-button>
+      </div>
+      <el-table :data="lfgDetailList" stripe v-loading="lfgDetailLoading" max-height="480" style="margin-top: 12px;">
+        <el-table-column label="类型" width="80">
+          <template #default="{ row }">{{ row.typeLabel }}</template>
+        </el-table-column>
+        <el-table-column prop="title" label="标题" min-width="140" />
+        <el-table-column prop="location" label="地点" min-width="120" />
+        <el-table-column label="开踢时间" width="160">
+          <template #default="{ row }">{{ formatTime(row.playTime) }}</template>
+        </el-table-column>
+        <el-table-column label="人数" width="90">
+          <template #default="{ row }">{{ row.joinedCount }}/{{ row.needCount }}</template>
+        </el-table-column>
+        <el-table-column label="发布人" width="110">
+          <template #default="{ row }">{{ row.publisher?.nickname || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">{{ row.statusLabel }}</template>
+        </el-table-column>
+        <el-table-column label="发布时间" width="160">
+          <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+        </el-table-column>
+        <template #empty>
+          <div style="padding: 24px; color: #999;">该时段暂无组队信息</div>
+        </template>
+      </el-table>
+      <div style="margin-top: 12px; text-align: right;" v-if="lfgDetailTotal > 0">
+        <el-pagination
+          v-model:current-page="lfgPage"
+          v-model:page-size="lfgPageSize"
+          :total="lfgDetailTotal"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          @size-change="loadLfgDetails"
+          @current-change="loadLfgDetails"
+        />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -167,7 +292,6 @@ use([CanvasRenderer, LineChart, BarChart, PieChart, TitleComponent, TooltipCompo
 
 const router = useRouter();
 
-// ========== 状态 ==========
 const overview = ref({});
 const pendingOrders = ref([]);
 const revenueRange = ref('30');
@@ -181,7 +305,43 @@ const loadingTopCourts = ref(false);
 const loadingLfg = ref(false);
 const loadingUsers = ref(false);
 
-// ========== 数据加载 ==========
+const statusMap = {
+  pending: '待支付', booked: '已预订', paid: '已支付',
+  completed: '已完成', canceled: '已取消', refunded: '已退款'
+};
+
+// 订单明细
+const orderDlgVisible = ref(false);
+const orderDateRange = ref([]);
+const orderStatus = ref('all');
+const orderDetailList = ref([]);
+const orderDetailTotal = ref(0);
+const orderPage = ref(1);
+const orderPageSize = ref(20);
+const orderDetailLoading = ref(false);
+
+// 组队明细
+const lfgDlgVisible = ref(false);
+const lfgDateRange = ref([]);
+const lfgType = ref('all');
+const lfgDetailList = ref([]);
+const lfgDetailTotal = ref(0);
+const lfgPage = ref(1);
+const lfgPageSize = ref(20);
+const lfgDetailLoading = ref(false);
+
+function todayStr() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function daysAgoStr(n) {
+  const d = new Date(Date.now() - n * 86400000);
+  const pad = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 async function loadOverview() {
   try {
     const res = await dashboardApi.overview();
@@ -227,7 +387,92 @@ async function loadTopCourts() {
   }
 }
 
-// ========== 工具方法 ==========
+function openOrderDetail() {
+  const t = todayStr();
+  orderDateRange.value = [t, t];
+  orderStatus.value = 'all';
+  orderPage.value = 1;
+  orderDlgVisible.value = true;
+  loadOrderDetails();
+}
+
+function setOrderRangeToday() {
+  const t = todayStr();
+  orderDateRange.value = [t, t];
+  orderPage.value = 1;
+  loadOrderDetails();
+}
+
+function setOrderRangeDays(n) {
+  orderDateRange.value = [daysAgoStr(n - 1), todayStr()];
+  orderPage.value = 1;
+  loadOrderDetails();
+}
+
+async function loadOrderDetails() {
+  orderDetailLoading.value = true;
+  try {
+    const [startDate, endDate] = orderDateRange.value || [];
+    const res = await dashboardApi.orderDetails({
+      startDate, endDate,
+      status: orderStatus.value,
+      page: orderPage.value,
+      pageSize: orderPageSize.value
+    });
+    orderDetailList.value = res.data?.list || [];
+    orderDetailTotal.value = res.data?.total || 0;
+  } catch (e) {
+    console.error(e);
+    orderDetailList.value = [];
+    orderDetailTotal.value = 0;
+  } finally {
+    orderDetailLoading.value = false;
+  }
+}
+
+function openLfgDetail() {
+  const t = todayStr();
+  lfgDateRange.value = [t, t];
+  lfgType.value = 'all';
+  lfgPage.value = 1;
+  lfgDlgVisible.value = true;
+  loadLfgDetails();
+}
+
+function setLfgRangeToday() {
+  const t = todayStr();
+  lfgDateRange.value = [t, t];
+  lfgPage.value = 1;
+  loadLfgDetails();
+}
+
+function setLfgRangeDays(n) {
+  lfgDateRange.value = [daysAgoStr(n - 1), todayStr()];
+  lfgPage.value = 1;
+  loadLfgDetails();
+}
+
+async function loadLfgDetails() {
+  lfgDetailLoading.value = true;
+  try {
+    const [startDate, endDate] = lfgDateRange.value || [];
+    const res = await dashboardApi.lfgDetails({
+      startDate, endDate,
+      type: lfgType.value,
+      page: lfgPage.value,
+      pageSize: lfgPageSize.value
+    });
+    lfgDetailList.value = res.data?.list || [];
+    lfgDetailTotal.value = res.data?.total || 0;
+  } catch (e) {
+    console.error(e);
+    lfgDetailList.value = [];
+    lfgDetailTotal.value = 0;
+  } finally {
+    lfgDetailLoading.value = false;
+  }
+}
+
 function formatMoney(val) {
   if (val == null) return '—';
   return Number(val).toLocaleString('zh-CN');
@@ -237,7 +482,7 @@ function formatTime(t) {
   if (!t) return '—';
   const d = new Date(t);
   const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getMonth() + 1}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function formatSchedule(date, timeSlot) {
@@ -253,7 +498,6 @@ function goToOrderDetail(id) {
   router.push({ path: '/ops/orders', query: { id } });
 }
 
-// ========== 图表 ==========
 const revenueOption = computed(() => {
   const xData = revenueData.value.map(d => d.date?.slice(5) || '');
   const yData = revenueData.value.map(d => Number(d.amount) || 0);
@@ -265,10 +509,7 @@ const revenueOption = computed(() => {
       data: xData.length > 0 ? xData : Array.from({ length: 30 }, (_, i) => `${i + 1}日`),
       axisLine: { lineStyle: { color: '#E0E0E0' } }
     },
-    yAxis: {
-      type: 'value',
-      axisLabel: { formatter: '¥{value}' }
-    },
+    yAxis: { type: 'value', axisLabel: { formatter: '¥{value}' } },
     series: [{
       name: 'GMV',
       type: 'line',
@@ -278,8 +519,7 @@ const revenueOption = computed(() => {
       itemStyle: { color: '#FF6B00' },
       areaStyle: {
         color: {
-          type: 'linear',
-          x: 0, y: 0, x2: 0, y2: 1,
+          type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
           colorStops: [
             { offset: 0, color: 'rgba(255, 107, 0, 0.3)' },
             { offset: 1, color: 'rgba(255, 107, 0, 0)' }
@@ -309,11 +549,7 @@ const topCourtsOption = computed(() => {
     tooltip: { trigger: 'axis' },
     grid: { left: 100, right: 30, top: 20, bottom: 30 },
     xAxis: { type: 'value', axisLabel: { formatter: '¥{value}' } },
-    yAxis: {
-      type: 'category',
-      data: sorted.map(d => d.name),
-      axisLabel: { fontSize: 12 }
-    },
+    yAxis: { type: 'category', data: sorted.map(d => d.name), axisLabel: { fontSize: 12 } },
     series: [{
       name: '收入',
       type: 'bar',
@@ -332,7 +568,6 @@ const topCourtsOption = computed(() => {
   };
 });
 
-// ========== 初始化 ==========
 onMounted(() => {
   loadOverview();
   loadPendingOrders();
@@ -353,5 +588,22 @@ onMounted(() => {
     font-size: 16px;
     font-weight: 600;
   }
+}
+
+.metric-clickable {
+  cursor: pointer;
+  transition: box-shadow 0.2s, transform 0.15s;
+
+  &:hover {
+    box-shadow: 0 4px 16px rgba(255, 107, 0, 0.18);
+    transform: translateY(-2px);
+  }
+}
+
+.dlg-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
 }
 </style>
