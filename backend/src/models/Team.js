@@ -10,6 +10,7 @@ module.exports = (sequelize) => {
     district: { type: DataTypes.STRING(32) },
     motto: { type: DataTypes.STRING(128) },
     description: { type: DataTypes.TEXT },
+    announcement: { type: DataTypes.TEXT },
     founded: { type: DataTypes.DATEONLY },
     level: { type: DataTypes.INTEGER, defaultValue: 1 },
     recruitment: { type: DataTypes.BOOLEAN, defaultValue: true },

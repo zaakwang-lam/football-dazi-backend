@@ -6,8 +6,10 @@ module.exports = (sequelize) => {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     name: { type: DataTypes.STRING(64), allowNull: false },
     ownerId: { type: DataTypes.INTEGER, allowNull: false, field: 'owner_id' },
-    // 人制类型不再使用 MySQL ENUM，避免新增 8/3 人制时生产库因枚举未迁移导致提交失败。
+    // 主展示人制（兼容旧逻辑）
     type: { type: DataTypes.STRING(32), allowNull: false },
+    // 支持的人制多选，与登记表单一致
+    types: { type: DataTypes.JSON },
     address: { type: DataTypes.STRING(255) },
     longitude: { type: DataTypes.DECIMAL(10, 6) },
     latitude: { type: DataTypes.DECIMAL(9, 6) },

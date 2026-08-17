@@ -17,28 +17,36 @@ function calcDistance(lat1, lng1, lat2, lng2) {
 async function getNearbyCourts(req, res) {
   const { longitude, latitude, type, page = 1, pageSize = 10, radiusKm = 50 } = req.query;
   const where = { status: 1 };
-  if (type && type !== 'all') where.type = type;
+  // type 筛选在内存中按 types 数组兼容
   const offset = (Number(page) - 1) * Number(pageSize);
   const { rows } = await Court.findAndCountAll({
-    where, limit: Number(pageSize), offset, order: [['rating', 'DESC']]
+    where, limit: Number(pageSize) * 3, offset, order: [['rating', 'DESC']]
   });
   const userLng = longitude ? Number(longitude) : null;
   const userLat = latitude ? Number(latitude) : null;
   let list = rows.map(c => {
+    const types = Array.isArray(c.types) && c.types.length ? c.types : (c.type ? [c.type] : []);
     const dist = (userLat && userLng)
       ? calcDistance(userLat, userLng, Number(c.latitude), Number(c.longitude)) : null;
     return {
-      id: c.id, name: c.name, type: c.type, price: parseFloat(c.price),
+      id: c.id, name: c.name, type: c.type, types,
+      price: parseFloat(c.price),
       address: c.address, rating: parseFloat(c.rating),
       longitude: c.longitude, latitude: c.latitude,
+      openTime: c.openTime, distance: dist ? Number(dist.toFixed(1)) : 0,
       images: c.images || [], tags: c.tags || [],
+      freeSlots: [],
       distanceKm: dist ? Number(dist.toFixed(2)) : null
     };
   });
+  if (type && type !== 'all') {
+    list = list.filter(c => (c.types || []).includes(type) || c.type === type);
+  }
   if (userLat && userLng) {
     list.sort((a, b) => (a.distanceKm || 999) - (b.distanceKm || 999));
     list = list.filter(c => !c.distanceKm || c.distanceKm <= Number(radiusKm));
   }
+  list = list.slice(0, Number(pageSize));
   res.json(success({
     list, total: list.length,
     userLocation: userLat && userLng ? { latitude: userLat, longitude: userLng } : null,
@@ -49,8 +57,9 @@ async function getNearbyCourts(req, res) {
 async function getCourtDetail(req, res) {
   const court = await Court.findByPk(req.params.id);
   if (!court) throw new BizError(ErrorCode.NOT_FOUND, '场地不存在');
+  const types = Array.isArray(court.types) && court.types.length ? court.types : (court.type ? [court.type] : []);
   res.json(success({
-    id: court.id, name: court.name, type: court.type,
+    id: court.id, name: court.name, type: court.type, types,
     price: parseFloat(court.price), address: court.address,
     longitude: court.longitude, latitude: court.latitude,
     phone: court.phone, openTime: court.openTime, closeTime: court.closeTime,
@@ -103,7 +112,8 @@ async function adminListCourts(req, res) {
   });
   res.json(success({
     list: rows.map(c => ({
-      id: c.id, name: c.name, type: c.type, price: parseFloat(c.price),
+      id: c.id, name: c.name, type: c.type, types: c.types || [],
+      price: parseFloat(c.price),
       address: c.address, phone: c.phone, rating: parseFloat(c.rating),
       status: c.status, createdAt: c.createdAt
     })),
@@ -132,7 +142,7 @@ async function adminGetCourtDetail(req, res) {
     throw new BizError(ErrorCode.FORBIDDEN, '无权限查看该场地');
   }
   res.json(success({
-    id: court.id, name: court.name, type: court.type,
+    id: court.id, name: court.name, type: court.type, types: court.types || [],
     price: parseFloat(court.price), address: court.address,
     longitude: court.longitude ? parseFloat(court.longitude) : null,
     latitude: court.latitude ? parseFloat(court.latitude) : null,
@@ -152,7 +162,7 @@ async function adminUpdateCourt(req, res) {
   if (admin.role === 'court_admin' && court.ownerId !== admin.id) {
     throw new BizError(ErrorCode.FORBIDDEN, '无权限编辑该场地');
   }
-  const allowed = ['name', 'type', 'address', 'longitude', 'latitude', 'phone', 'price',
+  const allowed = ['name', 'type', 'types', 'address', 'longitude', 'latitude', 'phone', 'price',
     'openTime', 'closeTime', 'images', 'tags', 'description', 'status'];
   const updates = {};
   for (const key of allowed) {
@@ -276,7 +286,6 @@ async function evaluateCourt(req, res) {
   const court = await Court.findByPk(id);
   if (!court) throw new BizError(ErrorCode.NOT_FOUND, '场地不存在');
   const old = parseFloat(court.rating) || 0;
-  // 简易：向新分靠近（无独立评价表时的近似）
   const next = old > 0 ? Number(((old * 0.8) + (rating * 0.2)).toFixed(1)) : rating;
   court.rating = next;
   if (content) {

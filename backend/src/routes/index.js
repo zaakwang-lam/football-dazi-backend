@@ -39,6 +39,7 @@ router.post('/api/v1/teams', userAuth(), teamCtrl.createTeam);
 router.get('/api/v1/teams/:id', teamCtrl.getTeamDetail);
 router.post('/api/v1/teams/:id/join', userAuth(), teamCtrl.joinTeam);
 router.post('/api/v1/teams/:id/checkin', userAuth(), teamCtrl.checkin);
+router.put('/api/v1/teams/:id/announcement', userAuth(), teamCtrl.updateAnnouncement);
 
 router.get('/api/user/profile', userAuth(), authCtrl.getUserProfile);
 router.put('/api/v1/user/profile', userAuth(), authCtrl.updateUserProfile);

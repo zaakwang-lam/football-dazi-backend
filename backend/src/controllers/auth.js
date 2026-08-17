@@ -87,10 +87,13 @@ async function registerRole(req, res) {
   if (currentRoles.includes(role)) throw new BizError(ErrorCode.FORBIDDEN, `已注册过 ${role} 角色`);
 
   if (role === 'court') {
-    if (!courtInfo || !courtInfo.name || !courtInfo.address || !courtInfo.type) throw new BizError(ErrorCode.PARAM_INVALID, '请填写球场名称、地址、类型');
+    if (!courtInfo || !courtInfo.name || !courtInfo.address) throw new BizError(ErrorCode.PARAM_INVALID, '请填写球场名称、地址');
     const ALLOWED_DISTRICTS = ['天河', '海珠', '越秀', '荔湾', '白云', '黄埔', '番禺', '花都', '南沙', '从化', '增城'];
     const ALLOWED_TYPES = ['11人制', '8人制', '7人制', '5人制', '3人制'];
-    if (!ALLOWED_TYPES.includes(courtInfo.type)) throw new BizError(ErrorCode.PARAM_INVALID, '请选择正确的人制类型');
+    const types = (Array.isArray(courtInfo.types) ? courtInfo.types : [])
+      .filter(t => ALLOWED_TYPES.includes(t));
+    if (!types.length && courtInfo.type && ALLOWED_TYPES.includes(courtInfo.type)) types.push(courtInfo.type);
+    if (!types.length) throw new BizError(ErrorCode.PARAM_INVALID, '请至少选择一种人制类型');
     if (!courtInfo.district || !ALLOWED_DISTRICTS.includes(courtInfo.district)) throw new BizError(ErrorCode.PARAM_INVALID, `请选择正确的行政区（${ALLOWED_DISTRICTS.join('/')}）`);
     const ALLOWED_SURFACES = ['人工草地', '天然草地', '硬地'];
     const surfaceTypes = (courtInfo.surfaceTypes || []).filter(s => ALLOWED_SURFACES.includes(s));
@@ -115,7 +118,9 @@ async function registerRole(req, res) {
     let court;
     try {
       court = await Court.create({
-        name: courtInfo.name, ownerId: userId, type: courtInfo.type, address: courtInfo.address,
+        name: courtInfo.name, ownerId: userId,
+        type: types[0], types,
+        address: courtInfo.address,
         district: courtInfo.district,
         longitude: courtInfo.longitude ? Number(courtInfo.longitude) : null,
         latitude: courtInfo.latitude ? Number(courtInfo.latitude) : null,
@@ -155,7 +160,8 @@ async function getUserProfile(req, res) {
     role: identity.role, roles: identity.roles, registered: identity.registered, courtId: user.courtId,
     court: court && {
       id: court.id, name: court.name, address: court.address, district: court.district,
-      type: court.type, surfaceType: court.surfaceType, surfaceTypes: court.surfaceTypes || [],
+      type: court.type, types: court.types || (court.type ? [court.type] : []),
+      surfaceType: court.surfaceType, surfaceTypes: court.surfaceTypes || [],
       status: court.status, phone: court.phone, price: court.price != null ? parseFloat(court.price) : null,
       openTime: court.openTime, closeTime: court.closeTime, openHours: court.openHours || null,
       description: court.description, createdAt: court.createdAt
@@ -217,7 +223,9 @@ async function getMyCourts(req, res) {
   });
   res.json(success({
     list: courts.map(c => ({
-      id: c.id, name: c.name, type: c.type, district: c.district, address: c.address,
+      id: c.id, name: c.name, type: c.type,
+      types: Array.isArray(c.types) && c.types.length ? c.types : (c.type ? [c.type] : []),
+      district: c.district, address: c.address,
       longitude: c.longitude ? parseFloat(c.longitude) : null,
       latitude: c.latitude ? parseFloat(c.latitude) : null,
       phone: c.phone, price: c.price != null ? parseFloat(c.price) : 0,
@@ -233,7 +241,7 @@ async function getMyCourts(req, res) {
 
 /**
  * PUT /api/user/me/courts/:id
- * 球场方再次编辑自己的球场（费用、电话、简介、营业时间等）
+ * 球场方再次编辑自己的球场（费用、电话、简介、人制多选等）
  */
 async function updateMyCourt(req, res) {
   const userId = Number(req.user.id);
@@ -244,22 +252,31 @@ async function updateMyCourt(req, res) {
   if (Number(court.ownerId) !== userId) throw new BizError(ErrorCode.FORBIDDEN, '只能编辑自己的球场');
 
   const body = req.body || {};
-  const allowed = ['name', 'address', 'district', 'type', 'phone', 'price', 'openTime', 'closeTime',
+  const ALLOWED_TYPES = ['11人制', '8人制', '7人制', '5人制', '3人制'];
+  const allowed = ['name', 'address', 'district', 'type', 'types', 'phone', 'price', 'openTime', 'closeTime',
     'description', 'surfaceType', 'surfaceTypes', 'openHours', 'longitude', 'latitude'];
   for (const key of allowed) {
     if (body[key] === undefined) continue;
     if (key === 'price') court.price = Number(body.price) || 0;
     else if (key === 'longitude' || key === 'latitude') court[key] = body[key] != null && body[key] !== '' ? Number(body[key]) : null;
-    else court[key] = body[key];
+    else if (key === 'types') {
+      const types = (Array.isArray(body.types) ? body.types : []).filter(t => ALLOWED_TYPES.includes(t));
+      if (types.length) {
+        court.types = types;
+        court.type = types[0];
+      }
+    } else court[key] = body[key];
   }
 
-  // 关键营业中内容后保持营业；审核中/拒绝后修改可再次进审核
+  // 改营业中内容后保持营业；审核中/拒绝后修改可再次进审核
   if (court.status === 3) court.status = 2;
   await court.save();
 
   res.json(success({
     id: court.id,
     name: court.name,
+    type: court.type,
+    types: court.types || [court.type],
     phone: court.phone,
     price: court.price != null ? parseFloat(court.price) : 0,
     status: court.status,
@@ -272,12 +289,13 @@ async function getMyTeams(req, res) {
   const { Team, TeamMember } = require('../models');
   const memberships = await TeamMember.findAll({
     where: { userId, status: 1 },
-    include: [{ model: Team, as: 'team', attributes: ['id', 'name', 'logo', 'district', 'motto', 'memberCount', 'attendance', 'wins', 'draws', 'losses', 'recruitment', 'level', 'founded'] }]
+    include: [{ model: Team, as: 'team', attributes: ['id', 'name', 'logo', 'district', 'motto', 'memberCount', 'attendance', 'wins', 'draws', 'losses', 'recruitment', 'level', 'founded', 'announcement'] }]
   });
   const list = memberships.filter(m => m.team).map(m => ({
     id: m.team.id, name: m.team.name, logo: m.team.logo, district: m.team.district, motto: m.team.motto,
     memberCount: m.team.memberCount, attendance: m.team.attendance, wins: m.team.wins, draws: m.team.draws,
     losses: m.team.losses, recruitment: m.team.recruitment, level: m.team.level, founded: m.team.founded,
+    announcement: m.team.announcement || '',
     role: m.role, joinedAt: m.createdAt
   }));
   res.json(success({ list, total: list.length }));
