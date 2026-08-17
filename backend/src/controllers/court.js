@@ -14,10 +14,14 @@ function calcDistance(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function pickCover(images) {
+  if (Array.isArray(images) && images.length && images[0]) return images[0];
+  return '';
+}
+
 async function getNearbyCourts(req, res) {
   const { longitude, latitude, type, page = 1, pageSize = 10, radiusKm = 50 } = req.query;
   const where = { status: 1 };
-  // type 筛选在内存中按 types 数组兼容
   const offset = (Number(page) - 1) * Number(pageSize);
   const { rows } = await Court.findAndCountAll({
     where, limit: Number(pageSize) * 3, offset, order: [['rating', 'DESC']]
@@ -28,13 +32,16 @@ async function getNearbyCourts(req, res) {
     const types = Array.isArray(c.types) && c.types.length ? c.types : (c.type ? [c.type] : []);
     const dist = (userLat && userLng)
       ? calcDistance(userLat, userLng, Number(c.latitude), Number(c.longitude)) : null;
+    const images = Array.isArray(c.images) ? c.images : [];
     return {
       id: c.id, name: c.name, type: c.type, types,
       price: parseFloat(c.price),
       address: c.address, rating: parseFloat(c.rating),
       longitude: c.longitude, latitude: c.latitude,
       openTime: c.openTime, distance: dist ? Number(dist.toFixed(1)) : 0,
-      images: c.images || [], tags: c.tags || [],
+      images,
+      coverUrl: pickCover(images),
+      tags: c.tags || [],
       freeSlots: [],
       distanceKm: dist ? Number(dist.toFixed(2)) : null
     };
@@ -58,18 +65,18 @@ async function getCourtDetail(req, res) {
   const court = await Court.findByPk(req.params.id);
   if (!court) throw new BizError(ErrorCode.NOT_FOUND, '场地不存在');
   const types = Array.isArray(court.types) && court.types.length ? court.types : (court.type ? [court.type] : []);
+  const images = Array.isArray(court.images) ? court.images : [];
   res.json(success({
     id: court.id, name: court.name, type: court.type, types,
     price: parseFloat(court.price), address: court.address,
     longitude: court.longitude, latitude: court.latitude,
     phone: court.phone, openTime: court.openTime, closeTime: court.closeTime,
-    images: court.images || [], tags: court.tags || [],
+    images, coverUrl: pickCover(images), tags: court.tags || [],
     description: court.description, rating: parseFloat(court.rating),
     district: court.district, surfaceTypes: court.surfaceTypes || []
   }));
 }
 
-/** 排期必须带 id，否则 C 端无法下单 */
 async function getCourtSchedule(req, res) {
   const { id } = req.params;
   const today = new Date();
@@ -115,7 +122,8 @@ async function adminListCourts(req, res) {
       id: c.id, name: c.name, type: c.type, types: c.types || [],
       price: parseFloat(c.price),
       address: c.address, phone: c.phone, rating: parseFloat(c.rating),
-      status: c.status, createdAt: c.createdAt
+      status: c.status, createdAt: c.createdAt,
+      images: c.images || [], coverUrl: pickCover(c.images)
     })),
     total: count
   }));
@@ -275,7 +283,6 @@ async function getFreeSlots(req, res) {
   }));
 }
 
-/** POST /api/v1/courts/:id/evaluate 简易评分（加权平均） */
 async function evaluateCourt(req, res) {
   const { id } = req.params;
   const { score, content } = req.body || {};
