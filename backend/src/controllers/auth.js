@@ -9,6 +9,8 @@ const logger = require('../utils/logger');
 const { success, fail, BizError, ErrorCode } = require('../utils/response');
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require('../utils/jwt');
 
+const AUDIT_TEST_OPENID = 'audit_test_openid_dual_role';
+
 function resolveIdentity(user) {
   const roles = Array.isArray(user.roles) ? user.roles.filter(Boolean) : [];
   let role = '';
@@ -38,6 +40,89 @@ async function refreshToken(req, res) {
   const admin = await Admin.findByPk(payload.id);
   if (!admin || admin.status !== 1) throw new BizError(ErrorCode.FORBIDDEN, '账号已被禁用');
   res.json(success({ accessToken: generateAccessToken({ id: admin.id, username: admin.username, role: admin.role, courtId: admin.courtId }) }));
+}
+
+/**
+ * 审核/联调用测试登录（不走微信 code）
+ * 仅当 TEST_LOGIN_ENABLED=1 且 secret 匹配时可用
+ * 账号同时具备个人方 + 球场方
+ */
+async function userLoginTest(req, res) {
+  const enabled = String(process.env.TEST_LOGIN_ENABLED || '') === '1';
+  if (!enabled) {
+    throw new BizError(ErrorCode.FORBIDDEN, '测试登录未开启');
+  }
+  const secret = process.env.TEST_LOGIN_SECRET || 'football-audit-2026';
+  const bodySecret = req.body?.secret || req.body?.password || '';
+  if (bodySecret !== secret) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '测试密钥错误');
+  }
+
+  let user = await User.findOne({ where: { openid: AUDIT_TEST_OPENID } });
+  if (!user) {
+    user = await User.create({
+      openid: AUDIT_TEST_OPENID,
+      nickname: '审核测试账号',
+      phone: '13800000000',
+      city: '广州',
+      role: 'user',
+      roles: ['user', 'court'],
+      status: 1
+    });
+  }
+
+  // 确保双角色 + 有营业中球场
+  const roles = Array.isArray(user.roles) ? [...user.roles] : [];
+  if (!roles.includes('user')) roles.push('user');
+  if (!roles.includes('court')) roles.push('court');
+  user.roles = roles;
+  user.nickname = user.nickname || '审核测试账号';
+  user.status = 1;
+
+  const { Court } = require('../models');
+  let court = await Court.findOne({ where: { ownerId: user.id } });
+  if (!court) {
+    court = await Court.create({
+      name: '审核测试球场（天河）',
+      ownerId: user.id,
+      type: '5人制',
+      types: ['11人制', '7人制', '5人制'],
+      address: '广州市天河区测试路 1 号',
+      district: '天河',
+      phone: '020-88888888',
+      price: 300,
+      openTime: '08:00:00',
+      closeTime: '22:00:00',
+      surfaceType: '人工草地',
+      surfaceTypes: ['人工草地'],
+      description: '审核测试球场',
+      status: 1,
+      rating: 5.0
+    });
+  } else if (court.status !== 1) {
+    court.status = 1;
+    await court.save();
+  }
+  user.courtId = court.id;
+  await user.save();
+
+  const accessToken = generateAccessToken({ id: user.id, openid: user.openid });
+  const identity = resolveIdentity(user);
+  logger.info(`[login-test] 审核测试账号登录 userId=${user.id}`);
+  res.json(success({
+    accessToken,
+    user: {
+      id: user.id,
+      nickname: user.nickname,
+      avatarUrl: user.avatarUrl,
+      phone: user.phone,
+      role: identity.role || 'user',
+      roles: identity.roles,
+      courtId: user.courtId,
+      registered: true,
+      isTestAccount: true
+    }
+  }, '测试登录成功'));
 }
 
 async function userLogin(req, res) {
@@ -213,7 +298,6 @@ async function uploadAvatar(req, res) {
 async function getAdminProfile(req, res) { res.json(success(req.admin)); }
 async function logout(req, res) { res.json(success(null, '已登出')); }
 
-/** 我的球场：含审核中/营业中/已拒绝，便于再次编辑 */
 async function getMyCourts(req, res) {
   const userId = req.user.id;
   const { Court } = require('../models');
@@ -242,10 +326,6 @@ async function getMyCourts(req, res) {
   }));
 }
 
-/**
- * PUT /api/user/me/courts/:id
- * 球场方再次编辑自己的球场（费用、电话、简介、人制多选等）
- */
 async function updateMyCourt(req, res) {
   const userId = Number(req.user.id);
   const courtId = Number(req.params.id);
@@ -290,10 +370,6 @@ async function updateMyCourt(req, res) {
   }, '保存成功'));
 }
 
-/**
- * POST /api/user/me/courts/:id/image
- * 球场方上传一张球场图片（覆盖 images[0]）
- */
 async function uploadCourtImage(req, res) {
   const userId = Number(req.user.id);
   const courtId = Number(req.params.id);
@@ -347,6 +423,6 @@ async function getMyTeams(req, res) {
 }
 
 module.exports = {
-  adminLogin, refreshToken, userLogin, registerRole, getUserProfile, updateUserProfile,
+  adminLogin, refreshToken, userLogin, userLoginTest, registerRole, getUserProfile, updateUserProfile,
   uploadAvatar, uploadCourtImage, getMyCourts, updateMyCourt, getMyTeams, getAdminProfile, logout
 };
