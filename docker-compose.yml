@@ -1,7 +1,11 @@
 # 足球搭子 - 云服务器一键部署
 # 使用方法：
-#   docker compose up -d
-#   docker compose logs -f backend
+#   1. 复制 .env.example 为 .env 并填真实值
+#   2. docker compose up -d
+#   3. docker compose logs -f backend
+#
+# 改 .env 后必须重建容器才会生效：
+#   docker compose up -d --force-recreate backend
 
 version: "3.8"
 
@@ -40,11 +44,16 @@ services:
       - ./backend/src:/app/src                  # 源码热重载（Node.js 自动重载）
       - ./backend/logs:/app/logs
       - ./backend/certs:/app/certs
+      # 上传目录需持久化，并供 nginx 静态代理（若 nginx 挂载同路径）
+      - ./backend/uploads:/app/uploads
     container_name: football-backend
     restart: always
     depends_on:
       mysql:
         condition: service_healthy
+    # .env 整文件注入容器（含未在下方枚举的键，如后续新增配置）
+    env_file:
+      - .env
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -52,15 +61,21 @@ services:
       DB_PORT: 3306
       DB_NAME: football_dazi
       DB_USER: football
+      # 下列 ${VAR:-default} 由 Compose 用项目目录 .env / 宿主机环境做插值
       DB_PASSWORD: ${MYSQL_PASSWORD:-Football@2026}
       JWT_SECRET: ${JWT_SECRET:-please-change-me-in-prod}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-30d}  # 2026-07-30 改为 30d（原来 2h 太短，7d 也不够）
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-30d}
       WX_APPID: ${WX_APPID}
       WX_SECRET: ${WX_SECRET}
       WX_MCHID: ${WX_MCHID}
       WX_PAY_KEY: ${WX_PAY_KEY}
       WX_NOTIFY_URL: ${WX_NOTIFY_URL}
       WX_TEMPLATE_ID_BOOK: ${WX_TEMPLATE_ID_BOOK}
+      # 头像/球场图公网前缀（须与小程序合法域名一致）
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://footballdazi.cn}
+      # 审核测试登录：.env 设为 1 开启，过审后务必改回 0 并 recreate
+      TEST_LOGIN_ENABLED: ${TEST_LOGIN_ENABLED:-0}
+      TEST_LOGIN_SECRET: ${TEST_LOGIN_SECRET:-football-audit-2026}
     ports:
       - "3000:3000"
     healthcheck:
@@ -84,6 +99,8 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d
       - ./nginx/ssl:/etc/nginx/ssl
       - ./nginx/logs:/var/log/nginx
+      # 与 backend 共享上传目录，便于 /uploads 静态访问
+      - ./backend/uploads:/var/www/uploads:ro
 
   # ========== 后台管理 Web（Vue3 SPA） ==========
   admin-web:
