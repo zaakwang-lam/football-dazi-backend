@@ -11,6 +11,7 @@ const lfgCtrl = require('../controllers/lfg');
 const teamCtrl = require('../controllers/team');
 const dashCtrl = require('../controllers/dashboard');
 const courtDashCtrl = require('../controllers/court-dashboard');
+const bannerCtrl = require('../controllers/banner');
 
 router.post('/api/admin/login', authCtrl.adminLogin);
 router.post('/api/admin/refresh', authCtrl.refreshToken);
@@ -29,6 +30,7 @@ router.get('/api/v1/courts/:id/schedule', courtCtrl.getCourtSchedule);
 router.get('/api/v1/courts/:id/free-slots', courtCtrl.getFreeSlots);
 router.post('/api/v1/courts/:id/free-slots', userAuth(), courtCtrl.publishFreeSlots);
 router.post('/api/v1/courts/:id/evaluate', userAuth(), courtCtrl.evaluateCourt);
+router.get('/api/v1/banners', bannerCtrl.listPublic);
 router.get('/api/v1/lfg/list', lfgCtrl.getLfgList);
 router.get('/api/v1/lfg/:id', lfgCtrl.getLfgDetail);
 router.post('/api/v1/lfg', userAuth(), lfgCtrl.publishLfg);
@@ -53,6 +55,10 @@ router.get('/api/user/me/lfg-posts', userAuth(), lfgCtrl.getMyLfgPosts);
 
 router.get('/api/admin/profile', adminAuth(), authCtrl.getAdminProfile);
 router.post('/api/admin/logout', adminAuth(), authCtrl.logout);
+router.get('/api/admin/banners', adminAuth(['super_admin', 'ops']), bannerCtrl.adminList);
+router.post('/api/admin/banners', adminAuth(['super_admin', 'ops']), bannerCtrl.adminUpload);
+router.put('/api/admin/banners/:id', adminAuth(['super_admin', 'ops']), bannerCtrl.adminUpdate);
+router.delete('/api/admin/banners/:id', adminAuth(['super_admin', 'ops']), bannerCtrl.adminDelete);
 router.get('/api/admin/courts/dashboard', adminAuth(['super_admin', 'court_admin']), courtDashCtrl.getCourtDashboard);
 router.get('/api/admin/courts', adminAuth(), courtCtrl.adminListCourts);
 router.get('/api/admin/courts/:id', adminAuth(), courtCtrl.adminGetCourtDetail);

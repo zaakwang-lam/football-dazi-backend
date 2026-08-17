@@ -17,7 +17,6 @@ const routes = require('./routes');
 
 const app = express();
 app.set('trust proxy', 1);
-// 允许小程序加载跨域图片（头像 /uploads）
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
@@ -30,7 +29,6 @@ app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 app.use((req, res, next) => req.path === '/api/payment/notify' ? next() : next());
 if (config.env === 'development') app.use(morgan('dev')); else app.use(requestLogger);
 
-// 用户头像静态资源（需 nginx 把 /uploads 反代到本服务，或由 location / 统一转发）
 app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
   maxAge: '7d',
   setHeaders(res) {
@@ -44,7 +42,6 @@ app.use(routes);
 app.use((req, res) => res.status(404).json(fail(404, `路径不存在: ${req.method} ${req.path}`)));
 app.use(errorHandler);
 
-// 生产库历史上把 courts.type 定义成 ENUM，新增 8/3 人制时容易因漏跑 migration 写入失败。
 async function ensureCourtTypeColumn() {
   try {
     await sequelize.query("ALTER TABLE courts MODIFY COLUMN type VARCHAR(32) NOT NULL");
@@ -54,12 +51,6 @@ async function ensureCourtTypeColumn() {
   }
 }
 
-/**
- * 历史模型把 courts.owner_id 外键指到 admins，
- * 小程序球场方注册写入 users.id 时会报：
- * Cannot add or update a child row: a foreign key constraint fails
- * 启动时删除指向 admins 的外键；owner_id 由业务层保证（= users.id）。
- */
 async function ensureCourtOwnerIdFk() {
   try {
     const [rows] = await sequelize.query(`
@@ -85,6 +76,17 @@ async function ensureCourtOwnerIdFk() {
   }
 }
 
+/** 确保 banners 表存在（生产环境也可能未跑 migration） */
+async function ensureBannerTable() {
+  try {
+    const { Banner } = require('./models');
+    await Banner.sync({ alter: true });
+    logger.info('✅ banners 表已同步');
+  } catch (err) {
+    logger.warn(`⚠️ banners 表同步跳过: ${err.message}`);
+  }
+}
+
 async function start() {
   try {
     await testConnection();
@@ -94,11 +96,11 @@ async function start() {
     }
     await ensureCourtTypeColumn();
     await ensureCourtOwnerIdFk();
+    await ensureBannerTable();
     app.listen(config.port, () => {
       logger.info('🚀 「足球搭子」后端服务启动成功');
       logger.info(`📍 端口: ${config.port}`);
       logger.info(`🌍 环境: ${config.env}`);
-      logger.info(`📖 API 文档: http://localhost:${config.port}/api-docs`);
       const { startAutoExpireCron } = require('./scripts/auto-expire');
       startAutoExpireCron();
     });

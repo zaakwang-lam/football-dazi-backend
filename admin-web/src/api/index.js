@@ -23,6 +23,13 @@ export const dashboardApi = {
   lfgDetails: (params) => request.get('/admin/dashboard/lfg', { params })
 };
 
+export const bannerApi = {
+  list: () => request.get('/admin/banners'),
+  upload: (data) => request.post('/admin/banners', data),
+  update: (id, data) => request.put(`/admin/banners/${id}`, data),
+  remove: (id) => request.delete(`/admin/banners/${id}`)
+};
+
 export const userApi = {
   list: (params) => request.get('/admin/users', { params }),
   detail: (id) => request.get(`/admin/users/${id}`),

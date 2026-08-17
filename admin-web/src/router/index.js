@@ -10,7 +10,6 @@ const routes = [
     component: () => import('@/views/Login.vue'),
     meta: { title: '登录', noAuth: true }
   },
-  // 场地方后台
   {
     path: '/',
     component: () => import('@/layouts/CourtLayout.vue'),
@@ -23,7 +22,6 @@ const routes = [
       { path: 'finance', name: 'CourtFinance', component: () => import('@/views/court/Finance.vue'), meta: { title: '财务管理' } }
     ]
   },
-  // 运营后台
   {
     path: '/ops',
     component: () => import('@/layouts/OpsLayout.vue'),
@@ -31,6 +29,7 @@ const routes = [
     children: [
       { path: '', redirect: '/ops/dashboard' },
       { path: 'dashboard', name: 'OpsDashboard', component: () => import('@/views/ops/Dashboard.vue'), meta: { title: '数据看板' } },
+      { path: 'banners', name: 'OpsBanners', component: () => import('@/views/ops/Banners.vue'), meta: { title: '首页轮播' } },
       { path: 'users', name: 'OpsUsers', component: () => import('@/views/ops/Users.vue'), meta: { title: '用户管理' } },
       { path: 'courts', name: 'OpsCourts', component: () => import('@/views/ops/Courts.vue'), meta: { title: '场地审核' } },
       { path: 'orders', name: 'OpsOrders', component: () => import('@/views/ops/Orders.vue'), meta: { title: '全平台订单' } },
@@ -48,7 +47,6 @@ const router = createRouter({
   routes
 });
 
-// 路由守卫
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore();
   document.title = to.meta.title ? `${to.meta.title} - 足球搭子后台` : '足球搭子后台';

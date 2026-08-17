@@ -21,6 +21,10 @@
           <el-icon><DataBoard /></el-icon>
           <span>数据看板</span>
         </el-menu-item>
+        <el-menu-item index="/ops/banners">
+          <el-icon><Picture /></el-icon>
+          <span>首页轮播</span>
+        </el-menu-item>
         <el-menu-item index="/ops/users">
           <el-icon><User /></el-icon>
           <span>用户管理</span>
@@ -78,7 +82,7 @@ import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { ElMessage } from 'element-plus';
 import {
-  DataBoard, User, Location, Document, Money, ArrowDown, SwitchButton
+  DataBoard, User, Location, Document, Money, ArrowDown, SwitchButton, Picture
 } from '@element-plus/icons-vue';
 
 const router = useRouter();
