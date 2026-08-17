@@ -16,6 +16,7 @@ const bannerCtrl = require('../controllers/banner');
 router.post('/api/admin/login', authCtrl.adminLogin);
 router.post('/api/admin/refresh', authCtrl.refreshToken);
 router.post('/api/user/login', authCtrl.userLogin);
+router.post('/api/user/login-test', authCtrl.userLoginTest);
 router.post('/api/payment/notify', express.text({ type: '*/*' }), orderCtrl.paymentNotify);
 
 router.post('/api/v1/orders', userAuth(), orderCtrl.createOrder);
