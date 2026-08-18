@@ -6,10 +6,9 @@ import router from '@/router';
 
 const request = axios.create({
   baseURL: '/api',
-  timeout: 15000
+  timeout: 20000
 });
 
-// 请求拦截器
 request.interceptors.request.use(
   (config) => {
     const authStore = useAuthStore();
@@ -21,7 +20,6 @@ request.interceptors.request.use(
   (err) => Promise.reject(err)
 );
 
-// 响应拦截器
 request.interceptors.response.use(
   (res) => {
     if (res.data?.code === 0) {
@@ -39,7 +37,15 @@ request.interceptors.response.use(
   },
   (err) => {
     console.error('API 错误:', err);
-    ElMessage.error(err.message || '网络错误');
+    const status = err.response?.status;
+    const msg =
+      err.response?.data?.message ||
+      (status === 502 || status === 503
+        ? '后端服务不可用，请检查 backend 容器是否启动'
+        : status === 404
+          ? '接口不存在，请检查 Nginx / API 反代'
+          : err.message || '网络错误');
+    ElMessage.error(msg);
     return Promise.reject(err);
   }
 );

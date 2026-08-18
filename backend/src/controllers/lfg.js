@@ -1,12 +1,11 @@
 // src/controllers/lfg.js
-// 凑人控制器
 const { LfgPost, LfgJoin, User, sequelize } = require('../models');
-const { success, fail, BizError, ErrorCode } = require('../utils/response');
+const { success, BizError, ErrorCode } = require('../utils/response');
 const { Op } = require('sequelize');
 const logger = require('../utils/logger');
 
 async function getLfgList(req, res) {
-  const { type, district, page = 1, pageSize = 10 } = req.query;
+  const { type, page = 1, pageSize = 10 } = req.query;
 
   const where = { status: { [Op.in]: ['open', 'full'] } };
   if (type && type !== 'all') where.type = type;
@@ -14,7 +13,7 @@ async function getLfgList(req, res) {
   const { rows, count } = await LfgPost.findAndCountAll({
     where,
     include: [
-      { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'] }
+      { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'], required: false }
     ],
     order: [['created_at', 'DESC']],
     limit: Number(pageSize),
@@ -26,7 +25,7 @@ async function getLfgList(req, res) {
       id: l.id,
       type: l.type,
       matchTypes: l.matchTypes || [],
-      title: l.title || `${l.location} ${l.type}`,
+      title: l.title || `${l.location || ''} ${l.type || ''}`.trim(),
       location: l.location,
       fee: l.fee !== null && l.fee !== undefined ? parseFloat(l.fee) : null,
       playTime: l.playTime,
@@ -213,7 +212,7 @@ async function getMyLfgPosts(req, res) {
     const createdPosts = await LfgPost.findAll({
       where: { userId },
       include: [
-        { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'] }
+        { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'], required: false }
       ],
       order: [['created_at', 'DESC']],
       limit: 100
@@ -230,8 +229,9 @@ async function getMyLfgPosts(req, res) {
       include: [{
         model: LfgPost,
         as: 'post',
+        required: false,
         include: [
-          { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'] }
+          { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'], required: false }
         ]
       }],
       order: [['created_at', 'DESC']],
@@ -269,26 +269,49 @@ async function getMyLfgPosts(req, res) {
   }));
 }
 
+/**
+ * 详情：先查主表，报名列表失败也不拖垮整页（修复首页点卡片「加载失败」）
+ */
 async function getLfgDetail(req, res) {
-  const { id } = req.params;
-
-  const post = await LfgPost.findByPk(id, {
-    include: [
-      { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'] },
-      // 使用模型属性名 createdAt（underscored 映射到 created_at），勿写 created_at
-      { model: LfgJoin, as: 'joins', attributes: ['id', 'userId', 'status', 'createdAt'] }
-    ]
-  });
-
-  if (!post) {
-    throw new BizError(ErrorCode.NOT_FOUND, '信息不存在');
+  const id = Number(req.params.id);
+  if (!id || Number.isNaN(id)) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '无效的 ID');
   }
 
-  const joins = (post.joins || []).map(j => ({
-    id: j.id,
-    userId: j.userId,
-    status: j.status
-  }));
+  let post;
+  try {
+    post = await LfgPost.findByPk(id, {
+      include: [
+        { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'], required: false }
+      ]
+    });
+  } catch (err) {
+    logger.error(`[getLfgDetail] load post id=${id}: ${err.message}`);
+    throw new BizError(ErrorCode.PARAM_INVALID, `加载失败：${String(err.message).slice(0, 80)}`);
+  }
+
+  if (!post) {
+    throw new BizError(ErrorCode.NOT_FOUND, '信息不存在或已删除');
+  }
+
+  let joins = [];
+  try {
+    const rows = await LfgJoin.findAll({
+      where: { lfgId: id },
+      attributes: ['id', 'userId', 'status'],
+      order: [['id', 'ASC']],
+      limit: 200
+    });
+    joins = rows.map(j => ({
+      id: j.id,
+      userId: j.userId,
+      status: j.status || 'pending'
+    }));
+  } catch (err) {
+    // 表结构异常时仍返回主信息，避免前端整页「加载失败」
+    logger.warn(`[getLfgDetail] joins skip id=${id}: ${err.message}`);
+    joins = [];
+  }
 
   res.json(success({
     id: post.id,
@@ -304,7 +327,7 @@ async function getLfgDetail(req, res) {
     contact: post.contact,
     description: post.description,
     status: post.status,
-    publisher: post.publisher,
+    publisher: post.publisher || null,
     joins,
     joinCount: joins.length,
     createdAt: post.createdAt

@@ -1,6 +1,5 @@
-# 多阶段构建：第一阶段构建，第二阶段用 Nginx 提供静态文件
+# 多阶段构建：构建 Vue 静态资源 + Nginx 提供服务
 
-# ===== 阶段 1：构建 =====
 FROM node:18-alpine AS builder
 
 WORKDIR /app
@@ -10,33 +9,51 @@ RUN npm install --no-audit --no-fund
 
 COPY . .
 
-# 修改 API base 为生产域名（Cloudflare 配好后改为域名）
-# 灰度期先用 IP
-ARG API_BASE=http://43.136.84.244
+# 生产构建使用相对站点根路径 /admin/
+ARG API_BASE=
 ENV VITE_API_BASE=$API_BASE
 
 RUN npm run build
 
-# ===== 阶段 2：Nginx 提供静态文件 =====
 FROM nginx:alpine
 
-# 复制构建产物到 Nginx 静态目录
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# 配置 Nginx
-RUN echo 'server { \
-    listen 80; \
-    server_name _; \
-    root /usr/share/nginx/html; \
-    index index.html; \
-    location /api/ { \
-        proxy_pass http://football-backend:3000; \
-        proxy_set_header Host $host; \
-        proxy_set_header X-Real-IP $remote_addr; \
-    } \
-    location / { \
-        try_files $uri $uri/ /index.html; \
-    } \
-}' > /etc/nginx/conf.d/default.conf
+# base=/admin/：静态资源在 /admin/assets，API 反代到 backend 容器
+RUN printf '%s\n' \
+  'server {' \
+  '    listen 80;' \
+  '    server_name _;' \
+  '    root /usr/share/nginx/html;' \
+  '    index index.html;' \
+  '' \
+  '    # 登录等 API（容器内直连 backend 服务名）' \
+  '    location /api/ {' \
+  '        proxy_pass http://backend:3000;' \
+  '        proxy_http_version 1.1;' \
+  '        proxy_set_header Host $host;' \
+  '        proxy_set_header X-Real-IP $remote_addr;' \
+  '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' \
+  '        proxy_set_header X-Forwarded-Proto $scheme;' \
+  '        proxy_connect_timeout 10s;' \
+  '        proxy_read_timeout 60s;' \
+  '    }' \
+  '' \
+  '    # Vite base=/admin/ 时的资源与路由' \
+  '    location /admin/ {' \
+  '        alias /usr/share/nginx/html/;' \
+  '        try_files $uri $uri/ /admin/index.html;' \
+  '    }' \
+  '' \
+  '    location = /admin {' \
+  '        return 301 /admin/;' \
+  '    }' \
+  '' \
+  '    # 兼容直接打开根路径' \
+  '    location / {' \
+  '        try_files $uri $uri/ /index.html;' \
+  '    }' \
+  '}' \
+  > /etc/nginx/conf.d/default.conf
 
 EXPOSE 80

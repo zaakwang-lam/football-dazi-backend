@@ -26,7 +26,6 @@ const limiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeaders: true
 app.use('/api/', limiter);
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
-app.use((req, res, next) => req.path === '/api/payment/notify' ? next() : next());
 if (config.env === 'development') app.use(morgan('dev')); else app.use(requestLogger);
 
 app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
@@ -68,9 +67,6 @@ async function ensureCourtOwnerIdFk() {
       await sequelize.query(`ALTER TABLE courts DROP FOREIGN KEY \`${name}\``);
       logger.info(`✅ 已删除 courts.owner_id 外键 ${name} (原指向 ${ref})`);
     }
-    if (!rows || !rows.length) {
-      logger.info('ℹ️ courts.owner_id 无外键约束，跳过');
-    }
   } catch (err) {
     logger.warn(`⚠️ courts.owner_id 外键处理跳过: ${err.message}`);
   }
@@ -86,22 +82,37 @@ async function ensureBannerTable() {
   }
 }
 
-/** 确保 lfg_joins 表结构可用（修复「我要加入」500） */
+/** 安全创建/修补 lfg_joins，避免 alter 失败拖垮启动 */
 async function ensureLfgJoinTable() {
   try {
-    const { LfgJoin } = require('./models');
-    await LfgJoin.sync({ alter: true });
-    // 若历史上 status 为 ENUM 且值不一致，尽量改为 VARCHAR
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS lfg_joins (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        lfg_id INT NOT NULL,
+        user_id INT NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_lfg_joins_lfg (lfg_id),
+        INDEX idx_lfg_joins_user (user_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
     try {
       await sequelize.query(
         "ALTER TABLE lfg_joins MODIFY COLUMN status VARCHAR(32) NOT NULL DEFAULT 'pending'"
       );
-    } catch (e) {
-      logger.warn(`⚠️ lfg_joins.status 类型调整跳过: ${e.message}`);
+    } catch (e) { /* ignore */ }
+    // 补时间戳列（老表可能没有）
+    for (const col of ['created_at', 'updated_at']) {
+      try {
+        await sequelize.query(
+          `ALTER TABLE lfg_joins ADD COLUMN ${col} DATETIME DEFAULT CURRENT_TIMESTAMP`
+        );
+      } catch (e) { /* already exists */ }
     }
-    logger.info('✅ lfg_joins 表已同步');
+    logger.info('✅ lfg_joins 表已就绪');
   } catch (err) {
-    logger.warn(`⚠️ lfg_joins 表同步跳过: ${err.message}`);
+    logger.warn(`⚠️ lfg_joins 表处理跳过: ${err.message}`);
   }
 }
 
