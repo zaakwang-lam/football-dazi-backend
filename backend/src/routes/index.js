@@ -37,6 +37,7 @@ router.get('/api/v1/lfg/:id', lfgCtrl.getLfgDetail);
 router.post('/api/v1/lfg', userAuth(), lfgCtrl.publishLfg);
 router.post('/api/v1/lfg/:id/join', userAuth(), lfgCtrl.joinLfg);
 router.post('/api/v1/lfg/:id/quit', userAuth(), lfgCtrl.quitLfg);
+router.delete('/api/v1/lfg/:id', userAuth(), lfgCtrl.deleteLfg);
 router.get('/api/v1/teams', teamCtrl.getTeamList);
 router.post('/api/v1/teams', userAuth(), teamCtrl.createTeam);
 router.get('/api/v1/teams/:id', teamCtrl.getTeamDetail);
@@ -74,6 +75,8 @@ router.get('/api/admin/dashboard/orders', adminAuth(['super_admin', 'ops']), das
 router.get('/api/admin/dashboard/lfg', adminAuth(['super_admin', 'ops']), dashCtrl.getLfgDetails);
 router.get('/api/admin/orders', adminAuth(), adminOrderCtrl.listOrders);
 router.get('/api/admin/orders/:id', adminAuth(), adminOrderCtrl.getDetail);
+router.put('/api/admin/orders/:id', adminAuth(), adminOrderCtrl.updateOrder);
+router.delete('/api/admin/orders/:id', adminAuth(), adminOrderCtrl.deleteOrder);
 router.post('/api/admin/orders/:id/accept', adminAuth(), adminOrderCtrl.acceptOrder);
 router.post('/api/admin/orders/:id/cancel', adminAuth(), adminOrderCtrl.cancelOrder);
 router.get('/api/admin/users', adminAuth(), adminUsersCtrl.listUsers);

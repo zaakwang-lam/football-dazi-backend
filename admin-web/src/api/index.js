@@ -43,6 +43,8 @@ export const userApi = {
 export const orderApi = {
   list: (params) => request.get('/admin/orders', { params }),
   detail: (id) => request.get(`/admin/orders/${id}`),
+  update: (id, data) => request.put(`/admin/orders/${id}`, data),
+  remove: (id) => request.delete(`/admin/orders/${id}`),
   accept: (id) => request.post(`/admin/orders/${id}/accept`),
   cancel: (id, data) => request.post(`/admin/orders/${id}/cancel`, data)
 };
