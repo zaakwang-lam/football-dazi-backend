@@ -76,7 +76,6 @@ async function ensureCourtOwnerIdFk() {
   }
 }
 
-/** 确保 banners 表存在（生产环境也可能未跑 migration） */
 async function ensureBannerTable() {
   try {
     const { Banner } = require('./models');
@@ -84,6 +83,25 @@ async function ensureBannerTable() {
     logger.info('✅ banners 表已同步');
   } catch (err) {
     logger.warn(`⚠️ banners 表同步跳过: ${err.message}`);
+  }
+}
+
+/** 确保 lfg_joins 表结构可用（修复「我要加入」500） */
+async function ensureLfgJoinTable() {
+  try {
+    const { LfgJoin } = require('./models');
+    await LfgJoin.sync({ alter: true });
+    // 若历史上 status 为 ENUM 且值不一致，尽量改为 VARCHAR
+    try {
+      await sequelize.query(
+        "ALTER TABLE lfg_joins MODIFY COLUMN status VARCHAR(32) NOT NULL DEFAULT 'pending'"
+      );
+    } catch (e) {
+      logger.warn(`⚠️ lfg_joins.status 类型调整跳过: ${e.message}`);
+    }
+    logger.info('✅ lfg_joins 表已同步');
+  } catch (err) {
+    logger.warn(`⚠️ lfg_joins 表同步跳过: ${err.message}`);
   }
 }
 
@@ -97,6 +115,7 @@ async function start() {
     await ensureCourtTypeColumn();
     await ensureCourtOwnerIdFk();
     await ensureBannerTable();
+    await ensureLfgJoinTable();
     app.listen(config.port, () => {
       logger.info('🚀 「足球搭子」后端服务启动成功');
       logger.info(`📍 端口: ${config.port}`);

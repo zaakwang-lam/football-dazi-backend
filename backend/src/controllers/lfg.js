@@ -5,10 +5,6 @@ const { success, fail, BizError, ErrorCode } = require('../utils/response');
 const { Op } = require('sequelize');
 const logger = require('../utils/logger');
 
-/**
- * GET /api/v1/lfg/list
- * 凑人列表
- */
 async function getLfgList(req, res) {
   const { type, district, page = 1, pageSize = 10 } = req.query;
 
@@ -47,10 +43,6 @@ async function getLfgList(req, res) {
   }));
 }
 
-/**
- * POST /api/v1/lfg
- * 发布凑人
- */
 async function publishLfg(req, res) {
   const userId = req.user.id;
   const { type, title, location, playTime, needCount, level, contact, description, teamId, fee, matchTypes } = req.body;
@@ -89,10 +81,6 @@ async function publishLfg(req, res) {
   }));
 }
 
-/**
- * POST /api/v1/lfg/:id/join
- * 报名加入（约战 / 凑人）
- */
 async function joinLfg(req, res) {
   const lfgId = Number(req.params.id);
   const userId = Number(req.user && req.user.id);
@@ -131,7 +119,6 @@ async function joinLfg(req, res) {
         throw new BizError(ErrorCode.CONFLICT, '您已报名');
       }
 
-      // 确认用户存在，避免外键失败变成 500
       const user = await User.findByPk(userId, { transaction: t });
       if (!user) {
         throw new BizError(ErrorCode.UNAUTHORIZED, '用户不存在，请重新登录');
@@ -163,10 +150,10 @@ async function joinLfg(req, res) {
       throw new BizError(ErrorCode.CONFLICT, '您已报名');
     }
     if (/Unknown column|doesn't exist|ER_NO_SUCH_TABLE/i.test(msg)) {
-      throw new BizError(ErrorCode.PARAM_INVALID, '报名表结构未同步，请联系运维执行数据库迁移');
+      throw new BizError(ErrorCode.PARAM_INVALID, '报名表结构未同步，请联系运维重启后端');
     }
     if (/Data truncated|Incorrect .* value/i.test(msg)) {
-      throw new BizError(ErrorCode.PARAM_INVALID, '报名状态字段异常，请联系运维检查 lfg_joins.status');
+      throw new BizError(ErrorCode.PARAM_INVALID, '报名状态字段异常，请联系运维检查 lfg_joins');
     }
     throw new BizError(ErrorCode.PARAM_INVALID, `报名失败：${msg.slice(0, 120)}`);
   }
@@ -174,9 +161,6 @@ async function joinLfg(req, res) {
   res.json(success(null, '报名成功'));
 }
 
-/**
- * POST /api/v1/lfg/:id/quit
- */
 async function quitLfg(req, res) {
   const lfgId = Number(req.params.id);
   const userId = Number(req.user && req.user.id);
@@ -219,9 +203,6 @@ async function quitLfg(req, res) {
   }, '退出成功'));
 }
 
-/**
- * GET /api/user/me/lfg-posts?type=created|joined|all
- */
 async function getMyLfgPosts(req, res) {
   const userId = req.user.id;
   const type = req.query.type || 'all';
@@ -294,7 +275,8 @@ async function getLfgDetail(req, res) {
   const post = await LfgPost.findByPk(id, {
     include: [
       { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'] },
-      { model: LfgJoin, as: 'joins', attributes: ['id', 'userId', 'status', 'created_at'] }
+      // 使用模型属性名 createdAt（underscored 映射到 created_at），勿写 created_at
+      { model: LfgJoin, as: 'joins', attributes: ['id', 'userId', 'status', 'createdAt'] }
     ]
   });
 

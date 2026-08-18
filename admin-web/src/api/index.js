@@ -10,7 +10,10 @@ export const authApi = {
 
 export const courtApi = {
   list: (params) => request.get('/admin/courts', { params }),
+  detail: (id) => request.get(`/admin/courts/${id}`),
   create: (data) => request.post('/admin/courts', data),
+  update: (id, data) => request.put(`/admin/courts/${id}`, data),
+  remove: (id) => request.delete(`/admin/courts/${id}`),
   audit: (id, data) => request.post(`/admin/courts/${id}/audit`, data)
 };
 
