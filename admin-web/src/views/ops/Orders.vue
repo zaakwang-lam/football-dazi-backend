@@ -3,13 +3,12 @@
     <div class="card-header">
       <h3>📋 全平台订单管理</h3>
       <div style="display: flex; gap: 12px; align-items: center;">
-        <el-input v-model="keyword" placeholder="搜索订单号/用户/球场" style="width: 240px;" clearable @keyup.enter="loadList" />
+        <el-input v-model="keyword" placeholder="搜索订单号/电话" style="width: 240px;" clearable @keyup.enter="loadList" />
         <el-button @click="loadList">搜索</el-button>
         <el-button type="primary" @click="loadList">刷新</el-button>
       </div>
     </div>
 
-    <!-- 状态筛选标签 -->
     <el-tabs v-model="statusTab" @tab-change="loadList" style="margin-bottom: 16px;">
       <el-tab-pane label="全部" name="all" />
       <el-tab-pane label="待支付" name="pending" />
@@ -48,9 +47,11 @@
       <el-table-column label="下单时间" width="160">
         <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="viewDetail(row)">查看</el-button>
+          <el-button size="small" @click="onEdit(row)">编辑</el-button>
+          <el-button size="small" type="danger" link @click="onDelete(row)">删除</el-button>
           <template v-if="row.status === 'booked'">
             <el-button size="small" type="primary" @click="onAccept(row)" :loading="accepting === row.id">接单</el-button>
             <el-button size="small" type="danger" @click="onCancel(row)" :loading="canceling === row.id">拒绝</el-button>
@@ -62,7 +63,6 @@
       </template>
     </el-table>
 
-    <!-- 分页 -->
     <div style="margin-top: 16px; text-align: right;" v-if="total > 0">
       <el-pagination
         v-model:current-page="page"
@@ -75,7 +75,6 @@
       />
     </div>
 
-    <!-- 订单详情弹窗 -->
     <el-dialog v-model="detailVisible" title="订单详情" width="600px">
       <div v-if="detail" class="detail-content">
         <el-descriptions :column="2" border>
@@ -97,6 +96,35 @@
         </el-descriptions>
       </div>
     </el-dialog>
+
+    <el-dialog v-model="editVisible" title="编辑订单" width="520px" destroy-on-close>
+      <el-form :model="editForm" label-width="90px">
+        <el-form-item label="订单号">
+          <el-input :model-value="editForm.orderNo" disabled />
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="editForm.status" style="width: 100%;">
+            <el-option v-for="(label, key) in statusMap" :key="key" :label="label" :value="key" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="金额">
+          <el-input-number v-model="editForm.amount" :min="0" :max="999999" :precision="2" style="width: 100%;" />
+        </el-form-item>
+        <el-form-item label="联系人">
+          <el-input v-model="editForm.contactName" maxlength="32" />
+        </el-form-item>
+        <el-form-item label="联系电话">
+          <el-input v-model="editForm.contactPhone" maxlength="20" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="editForm.remark" type="textarea" :rows="3" maxlength="255" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="confirmEdit">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -117,9 +145,20 @@ const pageSize = ref(20);
 const loading = ref(false);
 const accepting = ref(null);
 const canceling = ref(null);
+const saving = ref(false);
 
 const detailVisible = ref(false);
 const detail = ref(null);
+const editVisible = ref(false);
+const editForm = ref({
+  id: null,
+  orderNo: '',
+  status: 'pending',
+  amount: 0,
+  contactName: '',
+  contactPhone: '',
+  remark: ''
+});
 
 const statusMap = {
   pending: '待支付',
@@ -171,6 +210,60 @@ async function viewDetail(row) {
   }
 }
 
+function onEdit(row) {
+  editForm.value = {
+    id: row.id,
+    orderNo: row.orderNo,
+    status: row.status,
+    amount: Number(row.amount) || 0,
+    contactName: row.contactName || '',
+    contactPhone: row.contactPhone || '',
+    remark: row.remark || ''
+  };
+  editVisible.value = true;
+}
+
+async function confirmEdit() {
+  const f = editForm.value;
+  if (!f.id) return;
+  saving.value = true;
+  try {
+    await orderApi.update(f.id, {
+      status: f.status,
+      amount: f.amount,
+      contactName: f.contactName,
+      contactPhone: f.contactPhone,
+      remark: f.remark
+    });
+    ElMessage.success('已保存');
+    editVisible.value = false;
+    loadList();
+  } catch (err) {
+    ElMessage.error(err.message || '保存失败');
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function onDelete(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除订单 ${row.orderNo}？删除后不可恢复。`,
+      '删除确认',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+    );
+  } catch {
+    return;
+  }
+  try {
+    await orderApi.remove(row.id);
+    ElMessage.success('已删除');
+    loadList();
+  } catch (err) {
+    ElMessage.error(err.message || '删除失败');
+  }
+}
+
 async function onAccept(row) {
   try {
     await ElMessageBox.confirm(
@@ -179,7 +272,7 @@ async function onAccept(row) {
       { confirmButtonText: '确认接单', cancelButtonText: '取消', type: 'warning' }
     );
   } catch {
-    return; // 用户取消
+    return;
   }
   accepting.value = row.id;
   try {
@@ -208,7 +301,7 @@ async function onCancel(row) {
     );
     reason = value;
   } catch {
-    return; // 用户取消
+    return;
   }
   canceling.value = row.id;
   try {
@@ -222,7 +315,6 @@ async function onCancel(row) {
   }
 }
 
-// 监听路由 query 跳转（从 Dashboard "去处理"）
 watch(() => route.query.id, async (id) => {
   if (id) {
     try {
@@ -239,7 +331,6 @@ onMounted(() => {
   loadList();
 });
 
-// keep-alive 激活时刷新
 onActivated(() => {
   loadList();
 });
