@@ -86,6 +86,7 @@ router.get('/api/admin/users', adminAuth(), adminUsersCtrl.listUsers);
 router.get('/api/admin/users/:id', adminAuth(), adminUsersCtrl.getUserDetail);
 router.put('/api/admin/users/:id/status', adminAuth(['super_admin', 'ops']), adminUsersCtrl.updateUserStatus);
 router.delete('/api/admin/users/:id', adminAuth(['super_admin', 'ops']), adminUsersCtrl.deleteUser);
+router.post('/api/admin/users/:id/reset-role', adminAuth(['super_admin', 'ops']), adminUsersCtrl.resetUserRole);
 router.get('/api/admin/teams', adminAuth(['super_admin', 'ops']), teamCtrl.adminListTeams);
 router.put('/api/admin/teams/:id', adminAuth(['super_admin', 'ops']), teamCtrl.adminUpdateTeam);
 router.delete('/api/admin/teams/:id', adminAuth(['super_admin', 'ops']), teamCtrl.adminDeleteTeam);
