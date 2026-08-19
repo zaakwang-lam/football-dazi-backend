@@ -34,14 +34,17 @@
       <el-table-column prop="level" label="水平" width="100" />
       <el-table-column label="身份" min-width="200">
         <template #default="{ row }">
-          <el-tag
-            v-for="r in (row.roles || [row.role])"
-            :key="r"
-            :type="r === 'admin' ? 'danger' : (r === 'court' ? 'warning' : '')"
-            style="margin-right: 4px;"
-          >
-            {{ ROLE_LABEL[r] || r }}
-          </el-tag>
+          <template v-if="(row.roles && row.roles.length) || row.role">
+            <el-tag
+              v-for="r in (row.roles && row.roles.length ? row.roles : [row.role])"
+              :key="r"
+              :type="r === 'admin' ? 'danger' : (r === 'court' ? 'warning' : '')"
+              style="margin-right: 4px;"
+            >
+              {{ ROLE_LABEL[r] || r }}
+            </el-tag>
+          </template>
+          <el-tag v-else type="info">未选择身份</el-tag>
         </template>
       </el-table-column>
       <el-table-column v-if="showCourt" label="关联球场" min-width="160">
@@ -59,9 +62,18 @@
       <el-table-column label="注册时间" width="170">
         <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="300" fixed="right">
         <template #default="{ row }">
           <el-button size="small" link @click="viewDetail(row)">详情</el-button>
+          <el-button
+            size="small"
+            link
+            type="warning"
+            :loading="resetting === row.id"
+            @click="onResetRole(row)"
+          >
+            重置身份
+          </el-button>
           <el-button
             size="small"
             link
@@ -110,8 +122,17 @@
           <el-descriptions-item label="性别">{{ GENDER_LABEL[detail.gender] || '未知' }}</el-descriptions-item>
           <el-descriptions-item label="城市">{{ detail.city }}</el-descriptions-item>
           <el-descriptions-item label="水平">{{ detail.level }}</el-descriptions-item>
-          <el-descriptions-item label="主身份">
-            <el-tag>{{ ROLE_LABEL[detail.role] || detail.role }}</el-tag>
+          <el-descriptions-item label="身份">
+            <template v-if="detail.roles && detail.roles.length">
+              <el-tag
+                v-for="r in detail.roles"
+                :key="r"
+                :type="r === 'court' ? 'warning' : ''"
+                style="margin-right: 4px;"
+              >{{ ROLE_LABEL[r] || r }}</el-tag>
+            </template>
+            <el-tag v-else-if="detail.role" type="">{{ ROLE_LABEL[detail.role] || detail.role }}</el-tag>
+            <el-tag v-else type="info">未选择身份</el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="关联球场">{{ detail.courtName || '—' }}</el-descriptions-item>
           <el-descriptions-item label="状态" :span="2">
@@ -161,6 +182,7 @@ const pageSize = ref(20);
 const loading = ref(false);
 const toggling = ref(null);
 const deleting = ref(null);
+const resetting = ref(null);
 
 const detailVisible = ref(false);
 const detail = ref(null);
@@ -234,6 +256,36 @@ async function onToggleStatus(row) {
 onMounted(() => {
   loadList();
 });
+
+/**
+ * 重置身份：清空 roles，用户下次打开小程序需重新选择个人方/球场方
+ */
+async function onResetRole(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确认重置用户「${row.nickname}」的身份？\n\n重置后：\n• 清空个人方/球场方身份标记\n• 用户下次打开小程序需重新选择身份\n• 不删除订单、球队、球场等业务数据`,
+      '重置身份',
+      {
+        confirmButtonText: '确认重置',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    );
+  } catch {
+    return;
+  }
+  resetting.value = row.id;
+  try {
+    await userApi.resetRole(row.id);
+    ElMessage.success(`已重置「${row.nickname}」的身份`);
+    row.roles = [];
+    row.role = '';
+  } catch (err) {
+    ElMessage.error(err.message || '重置失败');
+  } finally {
+    resetting.value = null;
+  }
+}
 
 /**
  * 【2026-08-07 新增】删除用户
