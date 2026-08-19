@@ -74,6 +74,12 @@ async function listUsers(req, res) {
 
   const list = rows.map(u => {
     const json = u.toJSON();
+    // roles 以 JSON 字段为准；空则表示尚未选择身份
+    let roles = [];
+    try {
+      const raw = json.roles;
+      if (Array.isArray(raw)) roles = raw.filter((r) => r === 'user' || r === 'court' || r === 'admin');
+    } catch (_) { roles = []; }
     return {
       id: json.id,
       nickname: json.nickname || '（未设置）',
@@ -82,7 +88,8 @@ async function listUsers(req, res) {
       gender: json.gender,         // 0=未知 1=男 2=女
       city: json.city || '',
       level: json.level || '业余',
-      role: json.role,
+      role: json.role || (roles[0] || ''),
+      roles,
       courtId: json.courtId,
       courtName: json.courtId ? (courtMap[json.courtId] || null) : null,
       status: json.status,
@@ -127,6 +134,12 @@ async function getUserDetail(req, res) {
   }
 
   const json = user.toJSON();
+  let roles = [];
+  try {
+    const raw = json.roles;
+    if (Array.isArray(raw)) roles = raw.filter((r) => r === 'user' || r === 'court' || r === 'admin');
+  } catch (_) { roles = []; }
+
   res.json(success({
     id: json.id,
     nickname: json.nickname || '（未设置）',
@@ -135,7 +148,8 @@ async function getUserDetail(req, res) {
     gender: json.gender,
     city: json.city || '',
     level: json.level || '业余',
-    role: json.role,
+    role: json.role || (roles[0] || ''),
+    roles,
     openid: json.openid || '',
     unionid: json.unionid || '',
     courtId: json.courtId,
@@ -242,9 +256,46 @@ async function deleteUser(req, res) {
   }
 }
 
+/**
+ * POST /api/admin/users/:id/reset-role
+ * 重置用户身份：清空 roles / role，下次打开小程序需重新选择「个人方 / 球场方」
+ * 仅 ops / super_admin；不删除用户、球场、订单等业务数据
+ */
+async function resetUserRole(req, res) {
+  const { id } = req.params;
+  const admin = req.admin;
+
+  if (admin.role === 'court_admin') {
+    throw new BizError(ErrorCode.FORBIDDEN, '球场方无权重置用户身份');
+  }
+
+  const user = await User.findByPk(id);
+  if (!user) {
+    throw new BizError(ErrorCode.NOT_FOUND, '用户不存在');
+  }
+
+  const prevRoles = Array.isArray(user.roles) ? [...user.roles] : [];
+  const prevRole = user.role || '';
+
+  user.roles = null;
+  user.role = null;
+  await user.save();
+
+  logger.info(`[admin-users] user ${id} role reset by admin ${admin.id}: was role=${prevRole} roles=${JSON.stringify(prevRoles)}`);
+  res.json(success({
+    id: user.id,
+    roles: [],
+    role: '',
+    registered: false,
+    prevRoles,
+    prevRole
+  }, '已重置身份，用户下次进入小程序需重新选择个人方或球场方'));
+}
+
 module.exports = {
   listUsers,
   getUserDetail,
   updateUserStatus,
-  deleteUser
+  deleteUser,
+  resetUserRole
 };
