@@ -12,7 +12,12 @@ const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = requir
 const AUDIT_TEST_OPENID = 'audit_test_openid_dual_role';
 
 function resolveIdentity(user) {
-  const roles = Array.isArray(user.roles) ? user.roles.filter(Boolean) : [];
+  // 身份唯一以 roles JSON 为准；禁止用 ENUM role 默认值冒充「已选个人方」
+  let roles = [];
+  try {
+    const raw = user && user.roles;
+    if (Array.isArray(raw)) roles = raw.filter((r) => r === 'user' || r === 'court');
+  } catch (_) { roles = []; }
   let role = '';
   if (roles.length) {
     role = (user.role && roles.includes(user.role)) ? user.role : roles[0];
@@ -143,6 +148,7 @@ async function userLogin(req, res) {
       nickname: userInfo?.nickName || userInfo?.nickname || '',
       avatarUrl: (userInfo?.avatarUrl && /^https?:\/\//i.test(userInfo.avatarUrl)) ? userInfo.avatarUrl : '',
       gender: userInfo?.gender || 0,
+      role: null,   // 未选身份前不默认个人方
       roles: null
     });
   } else if (userInfo) {
