@@ -37,7 +37,8 @@ export const userApi = {
   list: (params) => request.get('/admin/users', { params }),
   detail: (id) => request.get(`/admin/users/${id}`),
   updateStatus: (id, data) => request.put(`/admin/users/${id}/status`, data),
-  delete: (id) => request.delete(`/admin/users/${id}`)
+  delete: (id) => request.delete(`/admin/users/${id}`),
+  resetRole: (id) => request.post(`/admin/users/${id}/reset-role`)
 };
 
 export const orderApi = {
