@@ -48,3 +48,9 @@ export const orderApi = {
   accept: (id) => request.post(`/admin/orders/${id}/accept`),
   cancel: (id, data) => request.post(`/admin/orders/${id}/cancel`, data)
 };
+
+export const teamApi = {
+  list: (params) => request.get('/admin/teams', { params }),
+  update: (id, data) => request.put(`/admin/teams/${id}`, data),
+  remove: (id) => request.delete(`/admin/teams/${id}`)
+};

@@ -13,6 +13,7 @@ function authMiddleware(required = true) {
     }
     const payload = verifyAccessToken(token);
     if (!payload) {
+      if (!required) { req.user = null; return next(); }
       return res.status(401).json(fail(ErrorCode.UNAUTHORIZED, 'Token 无效或已过期'));
     }
     req.user = payload;
@@ -79,8 +80,8 @@ function adminAuth(requiredRoles = []) {
   };
 }
 
-function userAuth() {
-  return authMiddleware(true);
+function userAuth(required = true) {
+  return authMiddleware(required !== false);
 }
 
 module.exports = { authMiddleware, adminAuth, userAuth };

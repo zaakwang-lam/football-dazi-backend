@@ -31,6 +31,7 @@ const routes = [
       { path: 'dashboard', name: 'OpsDashboard', component: () => import('@/views/ops/Dashboard.vue'), meta: { title: '数据看板' } },
       { path: 'banners', name: 'OpsBanners', component: () => import('@/views/ops/Banners.vue'), meta: { title: '首页轮播' } },
       { path: 'users', name: 'OpsUsers', component: () => import('@/views/ops/Users.vue'), meta: { title: '用户管理' } },
+      { path: 'teams', name: 'OpsTeams', component: () => import('@/views/ops/Teams.vue'), meta: { title: '球队管理' } },
       { path: 'courts', name: 'OpsCourts', component: () => import('@/views/ops/Courts.vue'), meta: { title: '场地审核' } },
       { path: 'orders', name: 'OpsOrders', component: () => import('@/views/ops/Orders.vue'), meta: { title: '全平台订单' } },
       { path: 'finance', name: 'OpsFinance', component: () => import('@/views/ops/Finance.vue'), meta: { title: '财务管理' } }
