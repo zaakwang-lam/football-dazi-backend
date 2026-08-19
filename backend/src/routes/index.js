@@ -40,8 +40,11 @@ router.post('/api/v1/lfg/:id/quit', userAuth(), lfgCtrl.quitLfg);
 router.delete('/api/v1/lfg/:id', userAuth(), lfgCtrl.deleteLfg);
 router.get('/api/v1/teams', teamCtrl.getTeamList);
 router.post('/api/v1/teams', userAuth(), teamCtrl.createTeam);
-router.get('/api/v1/teams/:id', teamCtrl.getTeamDetail);
+router.get('/api/v1/teams/:id', userAuth(false), teamCtrl.getTeamDetail);
 router.post('/api/v1/teams/:id/join', userAuth(), teamCtrl.joinTeam);
+router.post('/api/v1/teams/:id/leave', userAuth(), teamCtrl.leaveTeam);
+router.put('/api/v1/teams/:id', userAuth(), teamCtrl.updateTeam);
+router.post('/api/v1/teams/:id/dissolve', userAuth(), teamCtrl.dissolveTeam);
 router.post('/api/v1/teams/:id/checkin', userAuth(), teamCtrl.checkin);
 router.put('/api/v1/teams/:id/announcement', userAuth(), teamCtrl.updateAnnouncement);
 
@@ -83,5 +86,8 @@ router.get('/api/admin/users', adminAuth(), adminUsersCtrl.listUsers);
 router.get('/api/admin/users/:id', adminAuth(), adminUsersCtrl.getUserDetail);
 router.put('/api/admin/users/:id/status', adminAuth(['super_admin', 'ops']), adminUsersCtrl.updateUserStatus);
 router.delete('/api/admin/users/:id', adminAuth(['super_admin', 'ops']), adminUsersCtrl.deleteUser);
+router.get('/api/admin/teams', adminAuth(['super_admin', 'ops']), teamCtrl.adminListTeams);
+router.put('/api/admin/teams/:id', adminAuth(['super_admin', 'ops']), teamCtrl.adminUpdateTeam);
+router.delete('/api/admin/teams/:id', adminAuth(['super_admin', 'ops']), teamCtrl.adminDeleteTeam);
 
 module.exports = router;
