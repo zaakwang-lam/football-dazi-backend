@@ -55,6 +55,28 @@ async function publishLfg(req, res) {
     throw new BizError(ErrorCode.PARAM_INVALID, '请填写11位手机号码作为联系方式');
   }
 
+  // 仅球队成员（队长或队员）可发起凑人/约战
+  const tid = Number(teamId);
+  if (!tid || Number.isNaN(tid)) {
+    throw new BizError(ErrorCode.FORBIDDEN, '仅球队成员可发起，请先加入球队并选择球队');
+  }
+  const { TeamMember, Team } = require('../models');
+  const membership = await TeamMember.findOne({
+    where: { teamId: tid, userId, status: 1 }
+  });
+  if (!membership) {
+    throw new BizError(ErrorCode.FORBIDDEN, '您不是该球队成员，无法发起');
+  }
+  const team = await Team.findByPk(tid);
+  if (!team || team.status === 0) {
+    throw new BizError(ErrorCode.NOT_FOUND, '球队不存在或已解散');
+  }
+  // 标题优先使用球队正式名称
+  const teamName = team.name || '';
+  const finalTitle = title && String(title).trim()
+    ? String(title).trim()
+    : `${teamName} ${type === 'war' ? '约战' : '凑人'}`.trim();
+
   const ALLOWED_MATCH_TYPES = ['11人制', '8人制', '7人制', '5人制', '3人制'];
   let normalizedMatchTypes = null;
   if (matchTypes && Array.isArray(matchTypes) && matchTypes.length > 0) {
@@ -66,10 +88,10 @@ async function publishLfg(req, res) {
 
   const post = await LfgPost.create({
     userId,
-    teamId: teamId || null,
+    teamId: tid,
     type,
     matchTypes: normalizedMatchTypes,
-    title,
+    title: finalTitle,
     location,
     fee: fee !== undefined && fee !== null && fee !== '' ? Number(fee) : null,
     playTime,
