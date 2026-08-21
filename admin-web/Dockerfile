@@ -49,6 +49,11 @@ RUN printf '%s\n' \
   '        return 301 /admin/;' \
   '    }' \
   '' \
+  '    # /admin/ 默认入口跳到 dashboard (避免浏览器缓存旧 dist)' \
+  '    location = /admin/ {' \
+  '        return 302 /admin/#/dashboard;' \
+  '    }' \
+  '' \
   '    # 兼容直接打开根路径' \
   '    location / {' \
   '        try_files $uri $uri/ /index.html;' \
