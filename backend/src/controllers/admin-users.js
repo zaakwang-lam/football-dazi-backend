@@ -210,7 +210,7 @@ async function deleteUser(req, res) {
 
 /**
  * POST /api/admin/users/:id/reset-role
- * 用原生 SQL 强制清空 MySQL JSON 列 roles（Sequelize save 对 JSON 常写不进库）
+ * MySQL JSON：只有 JSON_SET(roles,'$',NULL) 能真正清空（SET NULL/CAST 常 ROWCOUNT=0）
  */
 async function resetUserRole(req, res) {
   const { id } = req.params;
@@ -231,45 +231,65 @@ async function resetUserRole(req, res) {
   const { sequelize } = require('../models');
   const uid = Number(id);
 
+  let affected = 0;
+  let method = 'json_set';
+
+  // 1) 主路径：JSON_SET → JSON null（实测唯一可靠）
   const [r1] = await sequelize.query(
-    'UPDATE `users` SET `roles` = NULL, `role` = NULL WHERE `id` = ?',
+    "UPDATE `users` SET `roles` = JSON_SET(`roles`, '$', NULL), `role` = NULL WHERE `id` = ?",
     { replacements: [uid] }
   );
-  let affected = (r1 && (r1.affectedRows ?? r1.changedRows)) || 0;
+  affected = (r1 && (r1.affectedRows ?? r1.changedRows)) || 0;
 
-  const [checkRows] = await sequelize.query(
-    'SELECT `id`, `role`, `roles`, JSON_TYPE(`roles`) AS roles_type, CAST(`roles` AS CHAR) AS roles_text FROM `users` WHERE `id` = ?',
+  let [checkRows] = await sequelize.query(
+    "SELECT `id`, `role`, CAST(`roles` AS CHAR) AS roles_text, JSON_TYPE(`roles`) AS roles_type FROM `users` WHERE `id` = ?",
     { replacements: [uid] }
   );
-  const row = Array.isArray(checkRows) ? checkRows[0] : null;
-  const rolesStillSet = row && row.roles != null
-    && String(row.roles_text || '') !== 'null'
-    && String(row.roles_text || '') !== '[]';
+  let row = Array.isArray(checkRows) ? checkRows[0] : null;
+  let finalText = row ? String(row.roles_text || '') : '';
+  let rolesEmpty = finalText === '' || finalText === 'null' || finalText === '[]';
 
-  if (rolesStillSet) {
+  if (!rolesEmpty) {
     const [r2] = await sequelize.query(
-      "UPDATE `users` SET `roles` = CAST('[]' AS JSON), `role` = NULL WHERE `id` = ?",
+      "UPDATE `users` SET `roles` = JSON_SET(COALESCE(`roles`, CAST('[]' AS JSON)), '$', NULL), `role` = NULL WHERE `id` = ?",
       { replacements: [uid] }
     );
     affected = (r2 && (r2.affectedRows ?? r2.changedRows)) || affected;
+    method = 'json_set_coalesce';
+    [checkRows] = await sequelize.query(
+      "SELECT `id`, `role`, CAST(`roles` AS CHAR) AS roles_text FROM `users` WHERE `id` = ?",
+      { replacements: [uid] }
+    );
+    row = Array.isArray(checkRows) ? checkRows[0] : null;
+    finalText = row ? String(row.roles_text || '') : '';
+    rolesEmpty = finalText === '' || finalText === 'null' || finalText === '[]';
   }
 
-  const [finalRows] = await sequelize.query(
-    'SELECT `id`, `role`, CAST(`roles` AS CHAR) AS roles_text FROM `users` WHERE `id` = ?',
-    { replacements: [uid] }
-  );
-  const finalRow = Array.isArray(finalRows) ? finalRows[0] : null;
-  const finalText = finalRow ? String(finalRow.roles_text || '') : '';
-  const rolesEmpty = finalText === '' || finalText === 'null' || finalText === '[]';
-  const roleEmpty = !finalRow || finalRow.role == null || finalRow.role === '';
+  if (!rolesEmpty) {
+    const [r3] = await sequelize.query(
+      "UPDATE `users` SET `roles` = CAST('null' AS JSON), `role` = NULL WHERE `id` = ?",
+      { replacements: [uid] }
+    );
+    affected = (r3 && (r3.affectedRows ?? r3.changedRows)) || affected;
+    method = 'cast_null_json';
+    [checkRows] = await sequelize.query(
+      "SELECT `id`, `role`, CAST(`roles` AS CHAR) AS roles_text FROM `users` WHERE `id` = ?",
+      { replacements: [uid] }
+    );
+    row = Array.isArray(checkRows) ? checkRows[0] : null;
+    finalText = row ? String(row.roles_text || '') : '';
+    rolesEmpty = finalText === '' || finalText === 'null' || finalText === '[]';
+  }
+
+  const roleEmpty = !row || row.role == null || row.role === '';
   const cleared = roleEmpty && rolesEmpty;
 
   logger.info(
-    `[admin-users] user ${id} role reset by admin ${admin.id}: was role=${prevRole} roles=${JSON.stringify(prevRoles)} affected=${affected} final.role=${finalRow && finalRow.role} final.roles=${finalText} cleared=${cleared}`
+    `[admin-users] user ${id} role reset by admin ${admin.id}: was role=${prevRole} roles=${JSON.stringify(prevRoles)} method=${method} affected=${affected} final.role=${row && row.role} final.roles=${finalText} cleared=${cleared}`
   );
 
   if (!cleared) {
-    throw new BizError(ErrorCode.INTERNAL, `重置身份写库失败，当前 roles=${finalText}，请用 SQL 清空`);
+    throw new BizError(ErrorCode.INTERNAL, `重置身份写库失败，当前 roles=${finalText}，请用 SQL: UPDATE users SET roles=JSON_SET(roles,'$',NULL), role=NULL WHERE id=${uid}`);
   }
 
   res.json(success({
@@ -280,6 +300,7 @@ async function resetUserRole(req, res) {
     prevRoles,
     prevRole,
     dbRolesText: finalText,
+    method,
     affected
   }, '已重置身份，用户下次进入小程序需重新选择个人方或球场方'));
 }
