@@ -14,7 +14,12 @@ export const courtApi = {
   create: (data) => request.post('/admin/courts', data),
   update: (id, data) => request.put(`/admin/courts/${id}`, data),
   remove: (id) => request.delete(`/admin/courts/${id}`),
-  audit: (id, data) => request.post(`/admin/courts/${id}/audit`, data)
+  audit: (id, data) => request.post(`/admin/courts/${id}/audit`, data),
+  importCourts: (data) => request.post('/admin/courts/import', data, { timeout: 60000 }),
+  importTemplate: (format = 'xls') => request.get('/admin/courts/import-template', {
+    params: { format },
+    responseType: 'blob'
+  })
 };
 
 export const dashboardApi = {

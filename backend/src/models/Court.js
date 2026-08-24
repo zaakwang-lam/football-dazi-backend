@@ -5,7 +5,7 @@ module.exports = (sequelize) => {
   const Court = sequelize.define('Court', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     name: { type: DataTypes.STRING(64), allowNull: false },
-    ownerId: { type: DataTypes.INTEGER, allowNull: false, field: 'owner_id' },
+    ownerId: { type: DataTypes.INTEGER, allowNull: true, field: 'owner_id' },
     // 主展示人制（兼容旧逻辑）
     type: { type: DataTypes.STRING(32), allowNull: false },
     // 支持的人制多选，与登记表单一致
@@ -14,12 +14,13 @@ module.exports = (sequelize) => {
     longitude: { type: DataTypes.DECIMAL(10, 6) },
     latitude: { type: DataTypes.DECIMAL(9, 6) },
     phone: { type: DataTypes.STRING(20) },
+    contactName: { type: DataTypes.STRING(32), field: 'contact_name' },
     price: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
     openTime: { type: DataTypes.TIME, field: 'open_time' },
     closeTime: { type: DataTypes.TIME, field: 'close_time' },
     surfaceType: { type: DataTypes.STRING(32), defaultValue: '人工草地', field: 'surface_type', validate: { isIn: [['人工草地', '天然草地', '硬地']] } },
     surfaceTypes: { type: DataTypes.JSON, field: 'surface_types' },
-    district: { type: DataTypes.STRING(32) },
+    district: { type: DataTypes.STRING(64) },
     images: { type: DataTypes.JSON },
     tags: { type: DataTypes.JSON },
     description: { type: DataTypes.TEXT },

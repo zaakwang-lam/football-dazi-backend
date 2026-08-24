@@ -1,5 +1,20 @@
 <template>
   <div class="page-card">
+    <div class="toolbar">
+      <div class="toolbar-title">球场管理</div>
+      <div class="toolbar-actions">
+        <el-button @click="onDownloadTemplate">下载导入模板</el-button>
+        <el-upload
+          accept=".xlsx,.xls,.csv"
+          :show-file-list="false"
+          :http-request="onImportFile"
+        >
+          <el-button type="primary" :loading="importing">批量导入 Excel</el-button>
+        </el-upload>
+      </div>
+    </div>
+    <p class="hint">模板字段：球场名称、省市区、详细地址、联系人、联系电话。导入后的球场默认上架；球场方进驻时若名称匹配，将自动绑定到该球场方可编辑、接单。</p>
+
     <el-tabs v-model="activeTab" @tab-change="onTabChange">
       <el-tab-pane :label="`待审核 (${counts.pending})`" name="2" />
       <el-tab-pane :label="`已通过 (${counts.approved})`" name="1" />
@@ -10,9 +25,15 @@
     <el-table :data="courts" stripe v-loading="loading">
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="name" label="场地名称" min-width="160" />
-      <el-table-column prop="type" label="类型" width="100" />
-      <el-table-column prop="address" label="地址" min-width="200" />
-      <el-table-column prop="phone" label="电话" width="130" />
+      <el-table-column prop="district" label="省市区" min-width="160" />
+      <el-table-column prop="address" label="详细地址" min-width="200" />
+      <el-table-column prop="contactName" label="联系人" width="100" />
+      <el-table-column prop="phone" label="联系电话" width="130" />
+      <el-table-column label="认领" width="90">
+        <template #default="{ row }">
+          <el-tag :type="row.claimed ? 'success' : 'info'" size="small">{{ row.claimed ? '已认领' : '未认领' }}</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="price" label="单价" width="110">
         <template #default="{ row }">¥{{ row.price }}/场</template>
       </el-table-column>
@@ -69,6 +90,9 @@
         <el-descriptions-item label="类型">{{ currentCourt.type }}</el-descriptions-item>
         <el-descriptions-item label="单价">¥{{ currentCourt.price }}/场</el-descriptions-item>
         <el-descriptions-item label="电话" :span="2">{{ currentCourt.phone || '无' }}</el-descriptions-item>
+        <el-descriptions-item label="联系人">{{ currentCourt.contactName || '无' }}</el-descriptions-item>
+        <el-descriptions-item label="认领">{{ currentCourt.claimed ? '已认领' : '未认领' }}</el-descriptions-item>
+        <el-descriptions-item label="省市区" :span="2">{{ currentCourt.district || '无' }}</el-descriptions-item>
         <el-descriptions-item label="地址" :span="2">{{ currentCourt.address }}</el-descriptions-item>
         <el-descriptions-item label="描述" :span="2">
           <pre style="margin: 0; white-space: pre-wrap;">{{ currentCourt.description || '无' }}</pre>
@@ -89,6 +113,12 @@
         </el-form-item>
         <el-form-item label="地址" required>
           <el-input v-model="editForm.address" />
+        </el-form-item>
+        <el-form-item label="省市区">
+          <el-input v-model="editForm.district" placeholder="如：广东省 广州市 白云区" />
+        </el-form-item>
+        <el-form-item label="联系人">
+          <el-input v-model="editForm.contactName" />
         </el-form-item>
         <el-form-item label="电话">
           <el-input v-model="editForm.phone" />
@@ -146,11 +176,14 @@ const editForm = ref({
   name: '',
   type: '11人制',
   address: '',
+  district: '',
   phone: '',
+  contactName: '',
   price: 0,
   status: 2,
   description: ''
 });
+const importing = ref(false);
 
 function getStatusType(status) {
   return { 0: 'info', 1: 'success', 2: 'warning', 3: 'info' }[status] || 'info';
@@ -281,7 +314,9 @@ function onEdit(row) {
     name: row.name || '',
     type: row.type || '11人制',
     address: row.address || '',
+    district: row.district || '',
     phone: row.phone || '',
+    contactName: row.contactName || '',
     price: Number(row.price) || 0,
     status: row.status,
     description: row.description || ''
@@ -301,7 +336,9 @@ async function confirmEdit() {
       name: f.name.trim(),
       type: f.type,
       address: f.address.trim(),
+      district: (f.district || '').trim(),
       phone: (f.phone || '').trim(),
+      contactName: (f.contactName || '').trim(),
       price: Number(f.price) || 0,
       status: Number(f.status),
       description: (f.description || '').trim()
@@ -345,6 +382,62 @@ async function onDelete(row) {
   }
 }
 
+async function onDownloadTemplate() {
+  const cells = (arr) => arr.map((c) => `<Cell><Data ss:Type="String">${String(c).replace(/&/g, '&').replace(/</g, '<')}</Data></Cell>`).join('');
+  const xml = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Worksheet ss:Name="球场导入">
+  <Table>
+   <Row>${cells(['球场名称', '省市区', '详细地址', '联系人', '联系电话'])}</Row>
+   <Row>${cells(['白云新海足球场', '广东省 广州市 白云区', '广州市白云区新海路1号', '张经理', '13800138000'])}</Row>
+  </Table>
+ </Worksheet>
+</Workbook>`;
+  const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '球场批量导入模板.xls';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const comma = result.indexOf(',');
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function onImportFile(options) {
+  const file = options.file;
+  if (!file) return;
+  importing.value = true;
+  try {
+    const base64 = await fileToBase64(file);
+    const res = await courtApi.importCourts({ filename: file.name, base64 });
+    if (res.code === 0) {
+      const d = res.data || {};
+      ElMessage.success(res.message || `导入完成：新增 ${d.created || 0}`);
+      loadList();
+      loadCounts();
+    } else {
+      ElMessage.error(res.message || '导入失败');
+    }
+  } catch (e) {
+    ElMessage.error(e.message || '导入失败');
+  } finally {
+    importing.value = false;
+  }
+}
+
 onMounted(() => {
   loadList();
   loadCounts();
@@ -357,5 +450,27 @@ onMounted(() => {
   border-radius: 8px;
   padding: 24px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.toolbar-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hint {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: #909399;
+  line-height: 1.6;
 }
 </style>

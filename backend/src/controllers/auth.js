@@ -25,6 +25,70 @@ function resolveIdentity(user) {
   return { roles, role, registered: roles.length > 0 };
 }
 
+function normCourtName(s) {
+  return String(s || '').replace(/\s+/g, '').replace(/（/g, '(').replace(/）/g, ')').toLowerCase();
+}
+
+async function tryClaimImportedCourt(userId, courtInfo, Court, Op) {
+  const name = String(courtInfo.name || '').trim();
+  if (!name) return null;
+  const unowned = await Court.findAll({
+    where: {
+      status: { [Op.ne]: -1 },
+      [Op.or]: [{ ownerId: null }, { ownerId: 0 }]
+    }
+  });
+  if (!unowned.length) return null;
+  const nameN = normCourtName(name);
+  const district = String(courtInfo.district || '').trim();
+  const phone = String(courtInfo.phone || '').replace(/\s+/g, '');
+
+  let hit = unowned.find((c) => normCourtName(c.name) === nameN);
+  if (!hit && district) {
+    const sameDistrict = unowned.filter((c) => String(c.district || '').indexOf(district.replace(/\s+/g, '')) >= 0
+      || district.indexOf(String(c.district || '')) >= 0);
+    hit = sameDistrict.find((c) => normCourtName(c.name) === nameN)
+      || sameDistrict.find((c) => {
+        const n = normCourtName(c.name);
+        return n && (nameN.indexOf(n) >= 0 || n.indexOf(nameN) >= 0);
+      });
+  }
+  if (!hit && phone && phone.length >= 8) {
+    hit = unowned.find((c) => String(c.phone || '').replace(/\s+/g, '') === phone && normCourtName(c.name) === nameN);
+  }
+  if (!hit) return null;
+
+  const ALLOWED_TYPES = ['11人制', '8人制', '7人制', '5人制', '3人制'];
+  const types = (Array.isArray(courtInfo.types) ? courtInfo.types : [])
+    .filter((t) => ALLOWED_TYPES.includes(t));
+  const ALLOWED_SURFACES = ['人工草地', '天然草地', '硬地'];
+  const surfaceTypes = (courtInfo.surfaceTypes || []).filter((s) => ALLOWED_SURFACES.includes(s));
+
+  hit.ownerId = userId;
+  if (courtInfo.address) hit.address = courtInfo.address;
+  if (district) hit.district = district;
+  if (phone) hit.phone = phone;
+  if (types.length) {
+    hit.types = types;
+    hit.type = types[0];
+  }
+  if (surfaceTypes.length) {
+    hit.surfaceTypes = surfaceTypes;
+    hit.surfaceType = surfaceTypes[0];
+  }
+  if (courtInfo.longitude) hit.longitude = Number(courtInfo.longitude);
+  if (courtInfo.latitude) hit.latitude = Number(courtInfo.latitude);
+  if (courtInfo.price != null && courtInfo.price !== '') hit.price = Number(courtInfo.price) || hit.price;
+  if (courtInfo.openHours) hit.openHours = courtInfo.openHours;
+  if (courtInfo.openTime) hit.openTime = courtInfo.openTime;
+  if (courtInfo.closeTime) hit.closeTime = courtInfo.closeTime;
+  if (courtInfo.description) hit.description = courtInfo.description;
+  if (Number(hit.status) !== 1) hit.status = 1;
+  await hit.save();
+  logger.info(`[registerRole:court] 认领系统收录球场 id=${hit.id} name=${hit.name} userId=${userId}`);
+  return hit;
+}
+
 async function adminLogin(req, res) {
   const { username, password } = req.body;
   if (!username || !password) throw new BizError(ErrorCode.PARAM_INVALID, '请输入用户名和密码');
@@ -185,6 +249,26 @@ async function registerRole(req, res) {
 
   if (role === 'court') {
     if (!courtInfo || !courtInfo.name || !courtInfo.address) throw new BizError(ErrorCode.PARAM_INVALID, '请填写球场名称、地址');
+    const { Court } = require('../models');
+    const { Op } = require('sequelize');
+
+    const claimed = await tryClaimImportedCourt(userId, courtInfo, Court, Op);
+    if (claimed) {
+      user.role = 'court';
+      user.courtId = claimed.id;
+      user.roles = [...new Set([...currentRoles, 'user', 'court'])];
+      await user.save();
+      const ready = Number(claimed.status) === 1;
+      return res.json(success({
+        role: 'court',
+        roles: user.roles,
+        courtId: claimed.id,
+        claimed: true,
+        courtStatus: ready ? 'approved' : 'pending',
+        message: ready ? '已绑定系统收录球场，可直接管理球场与订单' : '已绑定球场，请等待审核'
+      }, '进驻成功'));
+    }
+
     const ALLOWED_DISTRICTS = ['天河区', '海珠区', '越秀区', '荔湾区', '白云区', '黄埔区', '番禺区', '花都区', '南沙区', '从化区', '增城区'];
     const ALLOWED_TYPES = ['11人制', '8人制', '7人制', '5人制', '3人制'];
     const types = (Array.isArray(courtInfo.types) ? courtInfo.types : [])
@@ -212,7 +296,6 @@ async function registerRole(req, res) {
       if (!Object.keys(openHours).length) openHours = null;
     }
 
-    const { Court } = require('../models');
     let court;
     try {
       court = await Court.create({

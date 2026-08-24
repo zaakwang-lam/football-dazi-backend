@@ -116,6 +116,22 @@ async function ensureLfgJoinTable() {
   }
 }
 
+async function ensureCourtImportColumns() {
+  const alters = [
+    "ALTER TABLE courts MODIFY COLUMN owner_id INT NULL",
+    "ALTER TABLE courts MODIFY COLUMN district VARCHAR(64) NULL",
+    "ALTER TABLE courts ADD COLUMN contact_name VARCHAR(32) NULL"
+  ];
+  for (const sql of alters) {
+    try {
+      await sequelize.query(sql);
+      logger.info(`✅ ${sql}`);
+    } catch (err) {
+      logger.warn(`⚠️ courts 列同步跳过: ${err.message}`);
+    }
+  }
+}
+
 async function start() {
   try {
     await testConnection();
@@ -125,6 +141,7 @@ async function start() {
     }
     await ensureCourtTypeColumn();
     await ensureCourtOwnerIdFk();
+    await ensureCourtImportColumns();
     await ensureBannerTable();
     await ensureLfgJoinTable();
     app.listen(config.port, () => {

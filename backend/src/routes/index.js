@@ -70,6 +70,8 @@ router.put('/api/admin/banners/:id', adminAuth(['super_admin', 'ops']), bannerCt
 router.delete('/api/admin/banners/:id', adminAuth(['super_admin', 'ops']), bannerCtrl.adminDelete);
 router.get('/api/admin/courts/dashboard', adminAuth(['super_admin', 'court_admin']), courtDashCtrl.getCourtDashboard);
 router.get('/api/admin/courts', adminAuth(), courtCtrl.adminListCourts);
+router.post('/api/admin/courts/import', adminAuth(['super_admin', 'ops']), courtCtrl.adminImportCourts);
+router.get('/api/admin/courts/import-template', adminAuth(), courtCtrl.adminImportTemplate);
 router.get('/api/admin/courts/:id', adminAuth(), courtCtrl.adminGetCourtDetail);
 router.post('/api/admin/courts', adminAuth(['super_admin', 'court_admin']), courtCtrl.adminCreateCourt);
 router.put('/api/admin/courts/:id', adminAuth(['super_admin', 'court_admin']), courtCtrl.adminUpdateCourt);

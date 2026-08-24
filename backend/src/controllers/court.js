@@ -2,6 +2,7 @@
 const { Court, CourtSchedule, Order, User } = require('../models');
 const { success, fail, BizError, ErrorCode } = require('../utils/response');
 const { Op } = require('sequelize');
+const { parseTableBuffer, mapRows, buildCsvTemplate, buildExcelXmlTemplate } = require('../utils/excel-import');
 
 function calcDistance(lat1, lng1, lat2, lng2) {
   if (!lat1 || !lng1 || !lat2 || !lng2) return null;
@@ -155,6 +156,8 @@ async function adminListCourts(req, res) {
       id: c.id, name: c.name, type: c.type, types: c.types || [],
       price: parseFloat(c.price),
       address: c.address, phone: c.phone, rating: parseFloat(c.rating),
+      district: c.district || '', contactName: c.contactName || '',
+      ownerId: c.ownerId, claimed: !!c.ownerId,
       status: c.status, createdAt: c.createdAt,
       images: c.images || [], coverUrl: pickCover(c.images)
     })),
@@ -187,10 +190,12 @@ async function adminGetCourtDetail(req, res) {
     price: parseFloat(court.price), address: court.address,
     longitude: court.longitude ? parseFloat(court.longitude) : null,
     latitude: court.latitude ? parseFloat(court.latitude) : null,
-    phone: court.phone, openTime: court.openTime, closeTime: court.closeTime,
+    phone: court.phone, contactName: court.contactName || '',
+    openTime: court.openTime, closeTime: court.closeTime,
     images: court.images || [], tags: court.tags || [],
     description: court.description, status: court.status,
     rating: parseFloat(court.rating), ownerId: court.ownerId,
+    claimed: !!court.ownerId, district: court.district || '',
     createdAt: court.createdAt, updatedAt: court.updatedAt
   }));
 }
@@ -203,8 +208,8 @@ async function adminUpdateCourt(req, res) {
   if (admin.role === 'court_admin' && court.ownerId !== admin.id) {
     throw new BizError(ErrorCode.FORBIDDEN, '无权限编辑该场地');
   }
-  const allowed = ['name', 'type', 'types', 'address', 'longitude', 'latitude', 'phone', 'price',
-    'openTime', 'closeTime', 'images', 'tags', 'description', 'status'];
+  const allowed = ['name', 'type', 'types', 'address', 'longitude', 'latitude', 'phone', 'contactName', 'price',
+    'openTime', 'closeTime', 'images', 'tags', 'description', 'status', 'district'];
   const updates = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -336,9 +341,107 @@ async function evaluateCourt(req, res) {
   res.json(success({ id: court.id, rating: next }, '评价成功'));
 }
 
+function normCourtName(s) {
+  return String(s || '').replace(/\s+/g, '').replace(/（/g, '(').replace(/）/g, ')').toLowerCase();
+}
+
+async function adminImportTemplate(req, res) {
+  const format = String(req.query.format || 'xls').toLowerCase();
+  if (format === 'csv') {
+    const csv = buildCsvTemplate();
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="court-import.csv"');
+    return res.send(csv);
+  }
+  const xml = buildExcelXmlTemplate();
+  res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="court-import.xls"');
+  return res.send(xml);
+}
+
+async function adminImportCourts(req, res) {
+  const body = req.body || {};
+  let rows = [];
+  if (Array.isArray(body.rows) && body.rows.length) {
+    rows = body.rows.map((r) => ({
+      name: String(r.name || r['球场名称'] || '').trim(),
+      district: String(r.district || r['省市区'] || r['所在区域'] || '').trim(),
+      address: String(r.address || r['详细地址'] || r['地址'] || '').trim(),
+      contactName: String(r.contactName || r['联系人'] || '').trim(),
+      phone: String(r.phone || r['联系电话'] || r['电话'] || '').trim()
+    }));
+  } else if (body.base64 || body.csv) {
+    const raw = body.base64 || body.csv;
+    const buf = Buffer.from(String(raw).replace(/^data:[^;]+;base64,/, ''), body.csv && !body.base64 ? 'utf8' : 'base64');
+    const table = parseTableBuffer(buf, body.filename || '');
+    rows = mapRows(table);
+  } else {
+    throw new BizError(ErrorCode.PARAM_INVALID, '请上传 Excel / CSV 或传入 rows');
+  }
+
+  rows = rows.filter((r) => r.name);
+  if (!rows.length) throw new BizError(ErrorCode.PARAM_INVALID, '没有可导入的球场（缺少球场名称）');
+  if (rows.length > 500) throw new BizError(ErrorCode.PARAM_INVALID, '单次最多导入 500 条');
+
+  const existing = await Court.findAll({
+    where: { status: { [Op.ne]: -1 } },
+    attributes: ['id', 'name', 'address']
+  });
+  const existedNames = new Set(existing.map((c) => normCourtName(c.name)));
+
+  const created = [];
+  const skipped = [];
+  const failed = [];
+
+  for (const row of rows) {
+    const name = String(row.name || '').slice(0, 64);
+    const key = normCourtName(name);
+    if (!key) {
+      failed.push({ name, reason: '名称为空' });
+      continue;
+    }
+    if (existedNames.has(key)) {
+      skipped.push({ name, reason: '已存在同名球场' });
+      continue;
+    }
+    try {
+      const court = await Court.create({
+        name,
+        ownerId: null,
+        type: '11人制',
+        types: ['11人制'],
+        address: String(row.address || '').slice(0, 255),
+        district: String(row.district || '').slice(0, 64),
+        phone: String(row.phone || '').slice(0, 20),
+        contactName: String(row.contactName || '').slice(0, 32),
+        price: 0,
+        openTime: '08:00:00',
+        closeTime: '22:00:00',
+        surfaceType: '人工草地',
+        surfaceTypes: ['人工草地'],
+        description: '',
+        status: 1
+      });
+      existedNames.add(key);
+      created.push({ id: court.id, name: court.name });
+    } catch (err) {
+      failed.push({ name, reason: String(err.message || err).slice(0, 120) });
+    }
+  }
+
+  res.json(success({
+    created: created.length,
+    skipped: skipped.length,
+    failed: failed.length,
+    createdList: created,
+    skippedList: skipped,
+    failedList: failed
+  }, `导入完成：新增 ${created.length}，跳过 ${skipped.length}，失败 ${failed.length}`));
+}
+
 module.exports = {
   getNearbyCourts, getCourtDetail, getCourtSchedule, getFreeSlots, publishFreeSlots,
   evaluateCourt,
   adminListCourts, adminGetCourtDetail, adminCreateCourt, adminUpdateCourt,
-  adminDeleteCourt, auditCourt
+  adminDeleteCourt, auditCourt, adminImportCourts, adminImportTemplate
 };
