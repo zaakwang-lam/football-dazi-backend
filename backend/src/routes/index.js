@@ -57,6 +57,10 @@ router.put('/api/user/me/courts/:id', userAuth(), authCtrl.updateMyCourt);
 router.post('/api/user/me/courts/:id/image', userAuth(), authCtrl.uploadCourtImage);
 router.get('/api/user/me/teams', userAuth(), authCtrl.getMyTeams);
 router.get('/api/user/me/lfg-posts', userAuth(), lfgCtrl.getMyLfgPosts);
+router.get('/api/user/me/court-orders', userAuth(), orderCtrl.listCourtOwnerOrders);
+router.post('/api/user/me/court-orders/:id/accept', userAuth(), orderCtrl.acceptCourtOwnerOrder);
+router.post('/api/user/me/court-orders/:id/cancel', userAuth(), orderCtrl.cancelCourtOwnerOrder);
+router.post('/api/v1/teams/:id/logo', userAuth(), teamCtrl.uploadTeamLogo);
 
 router.get('/api/admin/profile', adminAuth(), authCtrl.getAdminProfile);
 router.post('/api/admin/logout', adminAuth(), authCtrl.logout);
