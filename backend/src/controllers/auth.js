@@ -151,6 +151,12 @@ async function userLogin(req, res) {
       role: null,   // 未选身份前不默认个人方
       roles: null
     });
+    // 关键：创建后强制 JSON_SET 清空 roles（避免 INSERT NULL 写入 JSON 列失败）
+    const { sequelize } = require('../models');
+    await sequelize.query(
+      "UPDATE `users` SET `roles` = JSON_SET(`roles`, '$', NULL), `role` = NULL WHERE `id` = ?",
+      { replacements: [user.id] }
+    );
   } else if (userInfo) {
     if (userInfo.nickName || userInfo.nickname) user.nickname = userInfo.nickName || userInfo.nickname;
     if (userInfo.avatarUrl && /^https?:\/\//i.test(userInfo.avatarUrl)) user.avatarUrl = userInfo.avatarUrl;
@@ -179,13 +185,14 @@ async function registerRole(req, res) {
 
   if (role === 'court') {
     if (!courtInfo || !courtInfo.name || !courtInfo.address) throw new BizError(ErrorCode.PARAM_INVALID, '请填写球场名称、地址');
-    const ALLOWED_DISTRICTS = ['天河', '海珠', '越秀', '荔湾', '白云', '黄埔', '番禺', '花都', '南沙', '从化', '增城'];
+    const ALLOWED_DISTRICTS = ['天河区', '海珠区', '越秀区', '荔湾区', '白云区', '黄埔区', '番禺区', '花都区', '南沙区', '从化区', '增城区'];
     const ALLOWED_TYPES = ['11人制', '8人制', '7人制', '5人制', '3人制'];
     const types = (Array.isArray(courtInfo.types) ? courtInfo.types : [])
       .filter(t => ALLOWED_TYPES.includes(t));
     if (!types.length && courtInfo.type && ALLOWED_TYPES.includes(courtInfo.type)) types.push(courtInfo.type);
     if (!types.length) throw new BizError(ErrorCode.PARAM_INVALID, '请至少选择一种人制类型');
-    if (!courtInfo.district || !ALLOWED_DISTRICTS.includes(courtInfo.district)) throw new BizError(ErrorCode.PARAM_INVALID, `请选择正确的行政区（${ALLOWED_DISTRICTS.join('/')}）`);
+    if (!courtInfo.district || !ALLOWED_DISTRICTS.some(d => String(courtInfo.district).endsWith(d)))
+      throw new BizError(ErrorCode.PARAM_INVALID, `请选择正确的行政区（${ALLOWED_DISTRICTS.join('/')}）`);
     const ALLOWED_SURFACES = ['人工草地', '天然草地', '硬地'];
     const surfaceTypes = (courtInfo.surfaceTypes || []).filter(s => ALLOWED_SURFACES.includes(s));
     if (!surfaceTypes.length && courtInfo.surfaceType) surfaceTypes.push(courtInfo.surfaceType);
