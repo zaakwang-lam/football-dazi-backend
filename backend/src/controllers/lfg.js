@@ -3,26 +3,22 @@ const { LfgPost, LfgJoin, User, sequelize } = require('../models');
 const { success, BizError, ErrorCode } = require('../utils/response');
 const { Op } = require('sequelize');
 const logger = require('../utils/logger');
-const wechatMsg = require('../services/wechat-msg');
 
 function isMobile(phone) {
   return /^1\d{10}$/.test(String(phone || '').trim());
 }
 
-async function notifyPublisherAfterJoin(post, payload) {
-  try {
-    const publisher = await User.findByPk(post.userId);
-    if (!publisher || !publisher.openid) return;
-    await wechatMsg.notifyLfgPublisher({
-      publisherOpenid: publisher.openid,
-      post,
-      joinerName: payload.contactName,
-      joinerPhone: payload.contactPhone,
-      teamName: payload.teamName
-    });
-  } catch (err) {
-    logger.warn(`[joinLfg] 通知发起方失败 lfg=${post.id}: ${err.message}`);
+async function syncJoinedCount(post, t) {
+  const confirmed = await LfgJoin.count({
+    where: { lfgId: post.id, status: 'confirmed' },
+    transaction: t
+  });
+  post.joinedCount = confirmed;
+  if (post.status === 'open' || post.status === 'full') {
+    post.status = confirmed >= (Number(post.needCount) || 1) ? 'full' : 'open';
   }
+  await post.save({ transaction: t });
+  return confirmed;
 }
 
 async function getLfgList(req, res) {
@@ -164,7 +160,9 @@ async function joinLfg(req, res) {
       }
 
       const existed = await LfgJoin.findOne({ where: { lfgId, userId }, transaction: t });
-      if (existed) throw new BizError(ErrorCode.CONFLICT, '您已报名');
+      if (existed && existed.status !== 'rejected') {
+        throw new BizError(ErrorCode.CONFLICT, existed.status === 'pending' ? '已提交报名，请等待发起方确认' : '您已报名');
+      }
 
       const user = await User.findByPk(userId, { transaction: t });
       if (!user) throw new BizError(ErrorCode.UNAUTHORIZED, '用户不存在，请重新登录');
@@ -194,7 +192,7 @@ async function joinLfg(req, res) {
         throw new BizError(ErrorCode.PARAM_INVALID, '请填写姓名');
       }
 
-      await LfgJoin.create({
+      const joinPayload = {
         lfgId,
         userId,
         status: 'pending',
@@ -202,17 +200,18 @@ async function joinLfg(req, res) {
         contactPhone,
         teamName: teamName || null,
         teamId
-      }, { transaction: t });
+      };
+      if (existed) {
+        Object.assign(existed, joinPayload);
+        await existed.save({ transaction: t });
+      } else {
+        await LfgJoin.create(joinPayload, { transaction: t });
+      }
 
       if (!user.phone) {
         user.phone = contactPhone;
         await user.save({ transaction: t });
       }
-
-      const nextJoined = Math.max(0, Number(post.joinedCount) || 0) + 1;
-      post.joinedCount = nextJoined;
-      if (nextJoined >= (Number(post.needCount) || 1)) post.status = 'full';
-      await post.save({ transaction: t });
 
       return {
         post: post.toJSON(),
@@ -237,16 +236,13 @@ async function joinLfg(req, res) {
     throw new BizError(ErrorCode.PARAM_INVALID, `报名失败：${msg.slice(0, 120)}`);
   }
 
-  if (saved && saved.post) {
-    notifyPublisherAfterJoin(saved.post, saved);
-  }
-
   res.json(success({
-    notified: true,
+    notified: false,
+    pending: true,
     contactName: saved && saved.contactName,
     contactPhone: saved && saved.contactPhone,
     teamName: saved && saved.teamName
-  }, '报名成功，已通知发起方'));
+  }, '已提交，请等待发起方在小程序确认'));
 }
 
 async function quitLfg(req, res) {
@@ -271,11 +267,7 @@ async function quitLfg(req, res) {
 
   await sequelize.transaction(async (t) => {
     await join.destroy({ transaction: t });
-    post.joinedCount = Math.max(0, (Number(post.joinedCount) || 0) - 1);
-    if (post.status === 'full' && post.joinedCount < (Number(post.needCount) || 1)) {
-      post.status = 'open';
-    }
-    await post.save({ transaction: t });
+    await syncJoinedCount(post, t);
   });
 
   res.json(success({
@@ -283,6 +275,75 @@ async function quitLfg(req, res) {
     joinedCount: post.joinedCount,
     status: post.status
   }, '退出成功'));
+}
+
+async function confirmLfgJoin(req, res) {
+  const lfgId = Number(req.params.id);
+  const joinId = Number(req.params.joinId);
+  const userId = Number(req.user && req.user.id);
+  if (!lfgId || !joinId) throw new BizError(ErrorCode.PARAM_INVALID, '参数无效');
+
+  await sequelize.transaction(async (t) => {
+    const post = await LfgPost.findByPk(lfgId, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!post) throw new BizError(ErrorCode.NOT_FOUND, '信息不存在');
+    if (Number(post.userId) !== userId) {
+      throw new BizError(ErrorCode.FORBIDDEN, '仅发起方可确认报名');
+    }
+    if (!['open', 'full'].includes(post.status)) {
+      throw new BizError(ErrorCode.CONFLICT, '该信息已关闭');
+    }
+    const join = await LfgJoin.findOne({
+      where: { id: joinId, lfgId },
+      transaction: t,
+      lock: t.LOCK.UPDATE
+    });
+    if (!join) throw new BizError(ErrorCode.NOT_FOUND, '报名记录不存在');
+    if (join.status === 'confirmed') {
+      return;
+    }
+    if (join.status === 'rejected') {
+      throw new BizError(ErrorCode.CONFLICT, '该报名已被拒绝');
+    }
+    const confirmed = await LfgJoin.count({
+      where: { lfgId, status: 'confirmed' },
+      transaction: t
+    });
+    if (confirmed >= (Number(post.needCount) || 1)) {
+      throw new BizError(ErrorCode.CONFLICT, post.type === 'war' ? '已有应战队伍，无法再确认' : '已满员，无法再确认');
+    }
+    join.status = 'confirmed';
+    await join.save({ transaction: t });
+    await syncJoinedCount(post, t);
+  });
+
+  res.json(success(null, '已确认'));
+}
+
+async function rejectLfgJoin(req, res) {
+  const lfgId = Number(req.params.id);
+  const joinId = Number(req.params.joinId);
+  const userId = Number(req.user && req.user.id);
+  if (!lfgId || !joinId) throw new BizError(ErrorCode.PARAM_INVALID, '参数无效');
+
+  await sequelize.transaction(async (t) => {
+    const post = await LfgPost.findByPk(lfgId, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!post) throw new BizError(ErrorCode.NOT_FOUND, '信息不存在');
+    if (Number(post.userId) !== userId) {
+      throw new BizError(ErrorCode.FORBIDDEN, '仅发起方可拒绝报名');
+    }
+    const join = await LfgJoin.findOne({
+      where: { id: joinId, lfgId },
+      transaction: t,
+      lock: t.LOCK.UPDATE
+    });
+    if (!join) throw new BizError(ErrorCode.NOT_FOUND, '报名记录不存在');
+    if (join.status === 'rejected') return;
+    join.status = 'rejected';
+    await join.save({ transaction: t });
+    await syncJoinedCount(post, t);
+  });
+
+  res.json(success(null, '已拒绝'));
 }
 
 /** 发起人删除自己的组队（关闭并移除报名记录） */
@@ -346,8 +407,20 @@ async function getMyLfgPosts(req, res) {
     const seen = new Set(posts.map(p => p.id));
     const joinedPosts = joins
       .filter(j => j.post && !seen.has(j.post.id))
-      .map(j => ({ ...j.post.toJSON(), _role: 'joiner' }));
+      .map(j => ({ ...j.post.toJSON(), _role: 'joiner', _joinStatus: j.status }));
     posts = posts.concat(joinedPosts);
+  }
+
+  let pendingMap = {};
+  const createdIds = posts.filter(p => p._role === 'creator').map(p => p.id);
+  if (createdIds.length) {
+    const pendingRows = await LfgJoin.findAll({
+      where: { lfgId: { [Op.in]: createdIds }, status: 'pending' },
+      attributes: ['lfgId']
+    });
+    pendingRows.forEach((r) => {
+      pendingMap[r.lfgId] = (pendingMap[r.lfgId] || 0) + 1;
+    });
   }
 
   const list = posts.map(p => ({
@@ -360,6 +433,8 @@ async function getMyLfgPosts(req, res) {
     playTime: p.playTime,
     needCount: p.needCount,
     joinedCount: p.joinedCount || 0,
+    pendingJoinCount: pendingMap[p.id] || 0,
+    joinStatus: p._joinStatus || '',
     level: p.level,
     contact: p.contact,
     description: p.description,
@@ -446,6 +521,8 @@ async function getLfgDetail(req, res) {
     isPublisher,
     joins,
     joinCount: joins.length,
+    pendingJoinCount: joins.filter(j => j.status === 'pending').length,
+    myJoinStatus: (joins.find(j => viewerId && Number(j.userId) === viewerId) || {}).status || '',
     createdAt: post.createdAt
   }));
 }
@@ -456,6 +533,8 @@ module.exports = {
   publishLfg,
   joinLfg,
   quitLfg,
+  confirmLfgJoin,
+  rejectLfgJoin,
   deleteLfg,
   getMyLfgPosts
 };

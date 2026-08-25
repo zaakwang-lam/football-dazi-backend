@@ -38,6 +38,8 @@ router.get('/api/v1/lfg/:id', userAuth(false), lfgCtrl.getLfgDetail);
 router.post('/api/v1/lfg', userAuth(), lfgCtrl.publishLfg);
 router.post('/api/v1/lfg/:id/join', userAuth(), lfgCtrl.joinLfg);
 router.post('/api/v1/lfg/:id/quit', userAuth(), lfgCtrl.quitLfg);
+router.post('/api/v1/lfg/:id/joins/:joinId/confirm', userAuth(), lfgCtrl.confirmLfgJoin);
+router.post('/api/v1/lfg/:id/joins/:joinId/reject', userAuth(), lfgCtrl.rejectLfgJoin);
 router.delete('/api/v1/lfg/:id', userAuth(), lfgCtrl.deleteLfg);
 router.get('/api/v1/teams', teamCtrl.getTeamList);
 router.post('/api/v1/teams', userAuth(), teamCtrl.createTeam);
