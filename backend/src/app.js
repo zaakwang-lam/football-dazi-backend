@@ -110,6 +110,17 @@ async function ensureLfgJoinTable() {
         );
       } catch (e) { /* already exists */ }
     }
+    const joinAlters = [
+      "ALTER TABLE lfg_joins ADD COLUMN contact_name VARCHAR(32) NULL",
+      "ALTER TABLE lfg_joins ADD COLUMN contact_phone VARCHAR(20) NULL",
+      "ALTER TABLE lfg_joins ADD COLUMN team_name VARCHAR(64) NULL",
+      "ALTER TABLE lfg_joins ADD COLUMN team_id INT NULL"
+    ];
+    for (const sql of joinAlters) {
+      try {
+        await sequelize.query(sql);
+      } catch (e) { /* already exists */ }
+    }
     logger.info('✅ lfg_joins 表已就绪');
   } catch (err) {
     logger.warn(`⚠️ lfg_joins 表处理跳过: ${err.message}`);

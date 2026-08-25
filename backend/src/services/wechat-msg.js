@@ -129,8 +129,50 @@ async function notifyCourtOwner(order, ownerOpenid) {
   }
 }
 
+/**
+ * 凑人/约战有人报名时通知发起方
+ */
+async function notifyLfgPublisher({ publisherOpenid, post, joinerName, joinerPhone, teamName }) {
+  if (!publisherOpenid) {
+    logger.warn('[lfg-notify] 发起方 openid 为空，跳过推送');
+    return { skipped: true, reason: 'no_publisher_openid' };
+  }
+  const templateId = process.env.WX_TEMPLATE_ID_LFG || process.env.WX_TEMPLATE_ID_BOOK;
+  const isWar = post && post.type === 'war';
+  const title = String((post && (post.title || post.location)) || (isWar ? '约战' : '凑人')).slice(0, 20);
+  let timeText = '';
+  if (post && post.playTime) {
+    const d = new Date(post.playTime);
+    if (!Number.isNaN(d.getTime())) {
+      timeText = `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    }
+  }
+  const who = isWar
+    ? (teamName || joinerName || '一支球队')
+    : (joinerName || '新成员');
+  const data = {
+    name1: { value: String(who).slice(0, 20) },
+    phone2: { value: String(joinerPhone || '未填').slice(0, 17) },
+    thing5: { value: title },
+    date4: { value: (timeText || '待定').slice(0, 17) },
+    phrase8: { value: isWar ? '有球队应战，请尽快联系' : '有人报名，请尽快联系' }
+  };
+  try {
+    return await sendSubscribeMessage({
+      touser: publisherOpenid,
+      templateId,
+      page: `pages/lfg/detail?id=${post && post.id ? post.id : ''}`,
+      data
+    });
+  } catch (e) {
+    logger.error(`[lfg-notify] 推送失败 lfg=${post && post.id}: ${e.message}`);
+    return { ok: false, error: e.message };
+  }
+}
+
 module.exports = {
   getAccessToken,
   sendSubscribeMessage,
-  notifyCourtOwner
+  notifyCourtOwner,
+  notifyLfgPublisher
 };

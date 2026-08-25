@@ -26,6 +26,7 @@ router.get('/api/v1/orders/:id', userAuth(), orderCtrl.getOrderDetail);
 router.post('/api/v1/payment/unified-order', userAuth(), orderCtrl.payOrder);
 router.post('/api/v1/payment/refund', userAuth(), orderCtrl.applyRefund);
 router.get('/api/v1/courts/nearby', courtCtrl.getNearbyCourts);
+router.get('/api/v1/courts/regions', courtCtrl.getCourtRegions);
 router.get('/api/v1/courts/:id', courtCtrl.getCourtDetail);
 router.get('/api/v1/courts/:id/schedule', courtCtrl.getCourtSchedule);
 router.get('/api/v1/courts/:id/free-slots', courtCtrl.getFreeSlots);
@@ -33,7 +34,7 @@ router.post('/api/v1/courts/:id/free-slots', userAuth(), courtCtrl.publishFreeSl
 router.post('/api/v1/courts/:id/evaluate', userAuth(), courtCtrl.evaluateCourt);
 router.get('/api/v1/banners', bannerCtrl.listPublic);
 router.get('/api/v1/lfg/list', lfgCtrl.getLfgList);
-router.get('/api/v1/lfg/:id', lfgCtrl.getLfgDetail);
+router.get('/api/v1/lfg/:id', userAuth(false), lfgCtrl.getLfgDetail);
 router.post('/api/v1/lfg', userAuth(), lfgCtrl.publishLfg);
 router.post('/api/v1/lfg/:id/join', userAuth(), lfgCtrl.joinLfg);
 router.post('/api/v1/lfg/:id/quit', userAuth(), lfgCtrl.quitLfg);

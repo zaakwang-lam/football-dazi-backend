@@ -3,6 +3,7 @@ const { Court, CourtSchedule, Order, User } = require('../models');
 const { success, fail, BizError, ErrorCode } = require('../utils/response');
 const { Op } = require('sequelize');
 const { parseTableBuffer, mapRows, buildCsvTemplate, buildExcelXmlTemplate } = require('../utils/excel-import');
+const { parseProvinceCity, matchRegion } = require('../utils/region-parse');
 
 function calcDistance(lat1, lng1, lat2, lng2) {
   if (!lat1 || !lng1 || !lat2 || !lng2) return null;
@@ -20,12 +21,57 @@ function pickCover(images) {
   return '';
 }
 
+function mapCourtRow(c, userLat, userLng) {
+  const types = Array.isArray(c.types) && c.types.length ? c.types : (c.type ? [c.type] : []);
+  const dist = (userLat && userLng && c.latitude && c.longitude)
+    ? calcDistance(userLat, userLng, Number(c.latitude), Number(c.longitude)) : null;
+  const images = Array.isArray(c.images) ? c.images : [];
+  const region = parseProvinceCity(c.district, c.address);
+  return {
+    id: c.id, name: c.name, type: c.type, types,
+    price: parseFloat(c.price),
+    address: c.address,
+    district: c.district || '',
+    province: region.province,
+    city: region.city,
+    regionLabel: region.label,
+    rating: parseFloat(c.rating),
+    longitude: c.longitude, latitude: c.latitude,
+    openTime: c.openTime,
+    distance: dist != null ? Number(dist.toFixed(1)) : null,
+    images,
+    coverUrl: pickCover(images),
+    tags: c.tags || [],
+    freeSlots: [],
+    distanceKm: dist != null ? Number(dist.toFixed(2)) : null
+  };
+}
+
+async function getCourtRegions(req, res) {
+  const courts = await Court.findAll({
+    where: { status: 1 },
+    attributes: ['id', 'district', 'address']
+  });
+  const map = new Map();
+  for (const c of courts) {
+    const r = parseProvinceCity(c.district, c.address);
+    if (!map.has(r.key)) {
+      map.set(r.key, { province: r.province, city: r.city, label: r.label, count: 0 });
+    }
+    map.get(r.key).count += 1;
+  }
+  const list = [...map.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'zh-CN'));
+  res.json(success({ list, total: list.length }));
+}
+
 async function getNearbyCourts(req, res) {
   const {
     longitude, latitude, type,
     page = 1, pageSize = 20,
     radiusKm = 50,
-    keyword = ''
+    keyword = '',
+    province = '',
+    city = ''
   } = req.query;
 
   const where = { status: 1 };
@@ -38,39 +84,43 @@ async function getNearbyCourts(req, res) {
     ];
   }
 
-  const limit = Math.min(Number(pageSize) || 20, 50);
+  const useRegion = String(province || '').trim() || String(city || '').trim();
+  const userLng = longitude ? Number(longitude) : null;
+  const userLat = latitude ? Number(latitude) : null;
+
+  if (useRegion) {
+    const rows = await Court.findAll({
+      where,
+      order: [['rating', 'DESC']]
+    });
+    let list = rows
+      .filter((c) => matchRegion(c, province, city))
+      .map((c) => mapCourtRow(c, userLat, userLng));
+    if (type && type !== 'all') {
+      list = list.filter(c => (c.types || []).includes(type) || c.type === type);
+    }
+    const limit = Math.min(Math.max(Number(pageSize) || 200, 1), 500);
+    const offset = (Math.max(Number(page) || 1, 1) - 1) * limit;
+    const total = list.length;
+    list = list.slice(offset, offset + limit);
+    return res.json(success({
+      list,
+      total,
+      userLocation: userLat && userLng ? { latitude: userLat, longitude: userLng } : null,
+      coordinateSystem: 'GCJ-02'
+    }));
+  }
+
+  const limit = Math.min(Number(pageSize) || 20, 200);
   const offset = (Number(page) - 1) * limit;
   const { rows } = await Court.findAndCountAll({
     where,
-    limit: limit * 3,
+    limit: Math.min(limit * 5, 500),
     offset,
     order: [['rating', 'DESC']]
   });
 
-  const userLng = longitude ? Number(longitude) : null;
-  const userLat = latitude ? Number(latitude) : null;
-
-  let list = rows.map(c => {
-    const types = Array.isArray(c.types) && c.types.length ? c.types : (c.type ? [c.type] : []);
-    const dist = (userLat && userLng && c.latitude && c.longitude)
-      ? calcDistance(userLat, userLng, Number(c.latitude), Number(c.longitude)) : null;
-    const images = Array.isArray(c.images) ? c.images : [];
-    return {
-      id: c.id, name: c.name, type: c.type, types,
-      price: parseFloat(c.price),
-      address: c.address,
-      district: c.district || '',
-      rating: parseFloat(c.rating),
-      longitude: c.longitude, latitude: c.latitude,
-      openTime: c.openTime,
-      distance: dist != null ? Number(dist.toFixed(1)) : null,
-      images,
-      coverUrl: pickCover(images),
-      tags: c.tags || [],
-      freeSlots: [],
-      distanceKm: dist != null ? Number(dist.toFixed(2)) : null
-    };
-  });
+  let list = rows.map(c => mapCourtRow(c, userLat, userLng));
 
   if (type && type !== 'all') {
     list = list.filter(c => (c.types || []).includes(type) || c.type === type);
@@ -82,14 +132,14 @@ async function getNearbyCourts(req, res) {
       const db = b.distanceKm != null ? b.distanceKm : 9999;
       return da - db;
     });
-    // 有坐标的按半径过滤；无坐标的球场仍保留（避免老数据被藏掉）
     list = list.filter(c => c.distanceKm == null || c.distanceKm <= Number(radiusKm));
   }
 
+  const total = list.length;
   list = list.slice(0, limit);
   res.json(success({
     list,
-    total: list.length,
+    total,
     userLocation: userLat && userLng ? { latitude: userLat, longitude: userLng } : null,
     coordinateSystem: 'GCJ-02'
   }));
@@ -440,7 +490,7 @@ async function adminImportCourts(req, res) {
 }
 
 module.exports = {
-  getNearbyCourts, getCourtDetail, getCourtSchedule, getFreeSlots, publishFreeSlots,
+  getNearbyCourts, getCourtRegions, getCourtDetail, getCourtSchedule, getFreeSlots, publishFreeSlots,
   evaluateCourt,
   adminListCourts, adminGetCourtDetail, adminCreateCourt, adminUpdateCourt,
   adminDeleteCourt, auditCourt, adminImportCourts, adminImportTemplate

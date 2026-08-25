@@ -3,6 +3,27 @@ const { LfgPost, LfgJoin, User, sequelize } = require('../models');
 const { success, BizError, ErrorCode } = require('../utils/response');
 const { Op } = require('sequelize');
 const logger = require('../utils/logger');
+const wechatMsg = require('../services/wechat-msg');
+
+function isMobile(phone) {
+  return /^1\d{10}$/.test(String(phone || '').trim());
+}
+
+async function notifyPublisherAfterJoin(post, payload) {
+  try {
+    const publisher = await User.findByPk(post.userId);
+    if (!publisher || !publisher.openid) return;
+    await wechatMsg.notifyLfgPublisher({
+      publisherOpenid: publisher.openid,
+      post,
+      joinerName: payload.contactName,
+      joinerPhone: payload.contactPhone,
+      teamName: payload.teamName
+    });
+  } catch (err) {
+    logger.warn(`[joinLfg] 通知发起方失败 lfg=${post.id}: ${err.message}`);
+  }
+}
 
 async function getLfgList(req, res) {
   const { type, page = 1, pageSize = 10 } = req.query;
@@ -110,6 +131,7 @@ async function publishLfg(req, res) {
 async function joinLfg(req, res) {
   const lfgId = Number(req.params.id);
   const userId = Number(req.user && req.user.id);
+  const body = req.body || {};
 
   if (!lfgId || Number.isNaN(lfgId)) {
     throw new BizError(ErrorCode.PARAM_INVALID, '无效的组队 ID');
@@ -118,8 +140,14 @@ async function joinLfg(req, res) {
     throw new BizError(ErrorCode.UNAUTHORIZED, '请先登录');
   }
 
+  const contactPhone = String(body.contactPhone || body.phone || '').trim();
+  if (!isMobile(contactPhone)) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '请填写11位手机号码作为联系方式');
+  }
+
+  let saved = null;
   try {
-    await sequelize.transaction(async (t) => {
+    saved = await sequelize.transaction(async (t) => {
       const post = await LfgPost.findByPk(lfgId, {
         transaction: t,
         lock: t.LOCK.UPDATE
@@ -141,12 +169,57 @@ async function joinLfg(req, res) {
       const user = await User.findByPk(userId, { transaction: t });
       if (!user) throw new BizError(ErrorCode.UNAUTHORIZED, '用户不存在，请重新登录');
 
-      await LfgJoin.create({ lfgId, userId, status: 'pending' }, { transaction: t });
+      const contactName = String(body.contactName || body.name || user.nickname || '').trim().slice(0, 32);
+      let teamName = String(body.teamName || '').trim().slice(0, 64);
+      let teamId = body.teamId ? Number(body.teamId) : null;
+      if (teamId && Number.isNaN(teamId)) teamId = null;
+
+      if (post.type === 'war') {
+        if (teamId) {
+          const { TeamMember, Team } = require('../models');
+          const membership = await TeamMember.findOne({
+            where: { teamId, userId, status: 1 },
+            transaction: t
+          });
+          if (!membership) {
+            throw new BizError(ErrorCode.FORBIDDEN, '您不是该球队成员，无法代表该队应战');
+          }
+          const team = await Team.findByPk(teamId, { transaction: t });
+          if (team && team.name) teamName = team.name;
+        }
+        if (!teamName) {
+          throw new BizError(ErrorCode.PARAM_INVALID, '请填写参赛队伍名称');
+        }
+      } else if (!contactName) {
+        throw new BizError(ErrorCode.PARAM_INVALID, '请填写姓名');
+      }
+
+      await LfgJoin.create({
+        lfgId,
+        userId,
+        status: 'pending',
+        contactName: contactName || teamName,
+        contactPhone,
+        teamName: teamName || null,
+        teamId
+      }, { transaction: t });
+
+      if (!user.phone) {
+        user.phone = contactPhone;
+        await user.save({ transaction: t });
+      }
 
       const nextJoined = Math.max(0, Number(post.joinedCount) || 0) + 1;
       post.joinedCount = nextJoined;
       if (nextJoined >= (Number(post.needCount) || 1)) post.status = 'full';
       await post.save({ transaction: t });
+
+      return {
+        post: post.toJSON(),
+        contactName: contactName || teamName,
+        contactPhone,
+        teamName
+      };
     });
   } catch (err) {
     if (err && err.isBizError) throw err;
@@ -155,13 +228,25 @@ async function joinLfg(req, res) {
     if (/foreign key constraint|Cannot add or update a child row/i.test(msg)) {
       throw new BizError(ErrorCode.PARAM_INVALID, '报名关联失败，请确认组队仍存在后重试');
     }
+    if (/Unknown column|contact_name|contact_phone|team_name/i.test(msg)) {
+      throw new BizError(ErrorCode.PARAM_INVALID, '报名字段尚未就绪，请稍后重试或联系管理员重启服务');
+    }
     if (/Duplicate entry|ER_DUP_ENTRY/i.test(msg)) {
       throw new BizError(ErrorCode.CONFLICT, '您已报名');
     }
     throw new BizError(ErrorCode.PARAM_INVALID, `报名失败：${msg.slice(0, 120)}`);
   }
 
-  res.json(success(null, '报名成功'));
+  if (saved && saved.post) {
+    notifyPublisherAfterJoin(saved.post, saved);
+  }
+
+  res.json(success({
+    notified: true,
+    contactName: saved && saved.contactName,
+    contactPhone: saved && saved.contactPhone,
+    teamName: saved && saved.teamName
+  }, '报名成功，已通知发起方'));
 }
 
 async function quitLfg(req, res) {
@@ -307,19 +392,37 @@ async function getLfgDetail(req, res) {
 
   if (!post) throw new BizError(ErrorCode.NOT_FOUND, '信息不存在或已删除');
 
+  const viewerId = req.user && req.user.id ? Number(req.user.id) : 0;
+  const isPublisher = viewerId && Number(post.userId) === viewerId;
+
   let joins = [];
   try {
     const rows = await LfgJoin.findAll({
       where: { lfgId: id },
-      attributes: ['id', 'userId', 'status'],
+      include: [
+        { model: User, as: 'user', attributes: ['id', 'nickname', 'avatarUrl'], required: false }
+      ],
       order: [['id', 'ASC']],
       limit: 200
     });
-    joins = rows.map(j => ({
-      id: j.id,
-      userId: j.userId,
-      status: j.status || 'pending'
-    }));
+    joins = rows.map(j => {
+      const isSelf = viewerId && Number(j.userId) === viewerId;
+      const showContact = isPublisher || isSelf;
+      const displayName = post.type === 'war'
+        ? (j.teamName || j.contactName || (j.user && j.user.nickname) || '未命名球队')
+        : (j.contactName || (j.user && j.user.nickname) || '未命名');
+      return {
+        id: j.id,
+        userId: j.userId,
+        status: j.status || 'pending',
+        nickname: (j.user && j.user.nickname) || j.contactName || '',
+        avatarUrl: (j.user && j.user.avatarUrl) || '',
+        teamName: j.teamName || '',
+        displayName,
+        contactName: showContact ? (j.contactName || '') : '',
+        contactPhone: showContact ? (j.contactPhone || '') : ''
+      };
+    });
   } catch (err) {
     logger.warn(`[getLfgDetail] joins skip id=${id}: ${err.message}`);
     joins = [];
@@ -340,6 +443,7 @@ async function getLfgDetail(req, res) {
     description: post.description,
     status: post.status,
     publisher: post.publisher || null,
+    isPublisher,
     joins,
     joinCount: joins.length,
     createdAt: post.createdAt
