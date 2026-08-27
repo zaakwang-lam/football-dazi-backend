@@ -9,6 +9,12 @@
 
 ## 🚧 [未发布] / Unreleased
 
+### 🔄 变更 (Changed)
+
+- ♻️ **小程序 appid 切换到企业新主体** `wxb3f1e355853399c8`（`ebb0a12`）→ 前端 v1.3.2 已上传
+- ♻️ **后端 .env 同步占位符** `wx1234567890abcdef` → `wxb3f1e355853399c8`（含 `backend/backend/.env`、`backend/backend/.env.example`、`backend/.env.example`、`backend/README.md`）
+- ✅ 服务器 `.env` `WX_APPID=wxb3f1e355853399c8` 已生效（SSH 验证 2026-08-27 15:30）
+
 ### 计划中
 
 - 🔲 SSL 证书申请（腾讯云免费证书）
