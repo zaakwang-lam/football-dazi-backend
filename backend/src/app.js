@@ -35,8 +35,14 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
 }));
+app.use(express.static(path.join(__dirname, '../public')));
 
-app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
+app.get('/health', (req, res) => res.json({
+  status: 'ok',
+  time: new Date().toISOString(),
+  wxAppId: config.wechat.appid || '',
+  wechatReady: !!(config.wechat.appid && config.wechat.secret)
+}));
 app.use(routes);
 app.use((req, res) => res.status(404).json(fail(404, `路径不存在: ${req.method} ${req.path}`)));
 app.use(errorHandler);
@@ -159,6 +165,8 @@ async function start() {
       logger.info('🚀 「足球搭子」后端服务启动成功');
       logger.info(`📍 端口: ${config.port}`);
       logger.info(`🌍 环境: ${config.env}`);
+      logger.info(`🔑 微信 AppID: ${config.wechat.appid || '(未配置)'}`);
+      logger.info(`🔑 微信 Secret: ${config.wechat.secret ? '已配置' : '未配置'}`);
       const { startAutoExpireCron } = require('./scripts/auto-expire');
       startAutoExpireCron();
     });

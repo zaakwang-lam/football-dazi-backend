@@ -10,6 +10,34 @@ const { success, fail, BizError, ErrorCode } = require('../utils/response');
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require('../utils/jwt');
 
 const AUDIT_TEST_OPENID = 'audit_test_openid_dual_role';
+const EXPECTED_WX_APPID = 'wxb3f1e355853399c8';
+
+function describeWxLoginError(errcode, errmsg) {
+  const code = Number(errcode);
+  if (code === 40125 || code === 40001) {
+    return '服务器 AppSecret 与新 AppID 不匹配，请把微信公众平台的 AppSecret 写入 WX_SECRET 并重启后端';
+  }
+  if (code === 40013) {
+    return `服务器 AppID 无效，请确认 WX_APPID=${EXPECTED_WX_APPID}`;
+  }
+  if (code === 40029 || code === 40163) {
+    return '登录凭证无效，请确认服务器 WX_APPID/WX_SECRET 已换成新主体小程序并重启';
+  }
+  if (code === 45011) return '登录过于频繁，请稍后再试';
+  return `微信登录失败: ${errmsg || errcode}`;
+}
+
+async function getPublicMeta(req, res) {
+  const appid = config.wechat.appid || '';
+  res.json(success({
+    ok: true,
+    wxAppId: appid,
+    expectedWxAppId: EXPECTED_WX_APPID,
+    appidMatch: appid === EXPECTED_WX_APPID,
+    wechatReady: !!(appid && config.wechat.secret),
+    apiBase: process.env.PUBLIC_BASE_URL || 'https://footballdazi.cn'
+  }));
+}
 
 function resolveIdentity(user) {
   // 身份唯一以 roles JSON 为准；禁止用 ENUM role 默认值冒充「已选个人方」
@@ -197,12 +225,22 @@ async function userLoginTest(req, res) {
 async function userLogin(req, res) {
   const { code, userInfo } = req.body;
   if (!code) throw new BizError(ErrorCode.PARAM_INVALID, '缺少 code');
+  const appid = config.wechat.appid;
+  const secret = config.wechat.secret;
+  if (!appid || !secret) {
+    logger.error('[userLogin] WX_APPID 或 WX_SECRET 未配置');
+    return res.status(503).json(fail(503, '服务器未配置微信 AppID/Secret'));
+  }
+  if (appid !== EXPECTED_WX_APPID) {
+    logger.warn(`[userLogin] 服务器 AppID=${appid} 与新主体 ${EXPECTED_WX_APPID} 不一致`);
+  }
   const sessionRes = await axios.get('https://api.weixin.qq.com/sns/jscode2session', {
-    params: { appid: config.wechat.appid, secret: config.wechat.secret, js_code: code, grant_type: 'authorization_code' }
+    params: { appid, secret, js_code: code, grant_type: 'authorization_code' }
   });
   if (sessionRes.data.errcode) {
-    logger.error(`微信登录失败: ${sessionRes.data.errmsg} (errcode=${sessionRes.data.errcode})`);
-    return res.status(503).json(fail(503, `微信服务暂时不可用: ${sessionRes.data.errmsg || 'AppSecret 未配置'}`));
+    const hint = describeWxLoginError(sessionRes.data.errcode, sessionRes.data.errmsg);
+    logger.error(`[userLogin] appid=${appid} 微信登录失败: ${sessionRes.data.errmsg} (errcode=${sessionRes.data.errcode})`);
+    return res.status(503).json(fail(503, hint));
   }
   const { openid, unionid } = sessionRes.data;
   let user = await User.findOne({ where: { openid } });
@@ -520,5 +558,6 @@ async function getMyTeams(req, res) {
 
 module.exports = {
   adminLogin, refreshToken, userLogin, userLoginTest, registerRole, getUserProfile, updateUserProfile,
-  uploadAvatar, uploadCourtImage, getMyCourts, updateMyCourt, getMyTeams, getAdminProfile, logout
+  uploadAvatar, uploadCourtImage, getMyCourts, updateMyCourt, getMyTeams, getAdminProfile, logout,
+  getPublicMeta
 };
