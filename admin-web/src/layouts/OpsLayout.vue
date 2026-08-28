@@ -4,7 +4,7 @@
       <div class="logo">
         <span class="logo-icon">⚽</span>
         <div>
-          <div class="logo-text">足球搭子</div>
+          <div class="logo-text">一起搭球</div>
           <div class="logo-sub">运营后台</div>
         </div>
       </div>

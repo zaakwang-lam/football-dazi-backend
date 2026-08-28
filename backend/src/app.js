@@ -162,7 +162,7 @@ async function start() {
     await ensureBannerTable();
     await ensureLfgJoinTable();
     app.listen(config.port, () => {
-      logger.info('🚀 「足球搭子」后端服务启动成功');
+      logger.info('🚀 「一起搭球」后端服务启动成功');
       logger.info(`📍 端口: ${config.port}`);
       logger.info(`🌍 环境: ${config.env}`);
       logger.info(`🔑 微信 AppID: ${config.wechat.appid || '(未配置)'}`);

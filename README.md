@@ -1,4 +1,4 @@
-# 「足球搭子」后端 + 支付系统
+# 「一起搭球」后端 + 支付系统
 
 > Node.js + Express + MySQL + Sequelize + 微信支付 v2
 

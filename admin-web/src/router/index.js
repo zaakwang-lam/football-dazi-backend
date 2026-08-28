@@ -50,7 +50,7 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore();
-  document.title = to.meta.title ? `${to.meta.title} - 足球搭子后台` : '足球搭子后台';
+  document.title = to.meta.title ? `${to.meta.title} - 一起搭球后台` : '一起搭球后台';
 
   if (to.meta.requiresAuth && !authStore.isLoggedIn) {
     next({ path: '/login', query: { redirect: to.fullPath } });

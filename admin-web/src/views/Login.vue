@@ -3,7 +3,7 @@
     <div class="login-card">
       <div class="brand">
         <div class="logo">⚽</div>
-        <h1>足球搭子后台</h1>
+        <h1>一起搭球后台</h1>
         <p class="subtitle">广州业余足球运营管理平台</p>
       </div>
 
