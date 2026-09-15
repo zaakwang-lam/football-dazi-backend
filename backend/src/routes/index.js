@@ -69,6 +69,7 @@ router.post('/api/user/me/court-orders/:id/cancel', userAuth(), orderCtrl.cancel
 router.post('/api/v1/teams/:id/logo', userAuth(), teamCtrl.uploadTeamLogo);
 
 router.get('/api/admin/profile', adminAuth(), authCtrl.getAdminProfile);
+router.put('/api/admin/password', adminAuth(), authCtrl.changeAdminPassword);
 router.post('/api/admin/logout', adminAuth(), authCtrl.logout);
 router.get('/api/admin/banners', adminAuth(['super_admin', 'ops']), bannerCtrl.adminList);
 router.post('/api/admin/banners', adminAuth(['super_admin', 'ops']), bannerCtrl.adminUpload);

@@ -30,6 +30,10 @@
           <el-icon><Money /></el-icon>
           <span>财务管理</span>
         </el-menu-item>
+        <el-menu-item index="/account">
+          <el-icon><Lock /></el-icon>
+          <span>账号安全</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -49,7 +53,10 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="logout">
+                <el-dropdown-item command="password">
+                  <el-icon><Lock /></el-icon> 修改密码
+                </el-dropdown-item>
+                <el-dropdown-item command="logout" divided>
                   <el-icon><SwitchButton /></el-icon> 退出登录
                 </el-dropdown-item>
               </el-dropdown-menu>
@@ -70,13 +77,17 @@ import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { ElMessage } from 'element-plus';
 import {
-  DataBoard, Location, Document, Money, ArrowDown, SwitchButton
+  DataBoard, Location, Document, Money, ArrowDown, SwitchButton, Lock
 } from '@element-plus/icons-vue';
 
 const router = useRouter();
 const authStore = useAuthStore();
 
 function onCommand(cmd) {
+  if (cmd === 'password') {
+    router.push('/account');
+    return;
+  }
   if (cmd === 'logout') {
     authStore.logout();
     ElMessage.success('已退出登录');

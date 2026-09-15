@@ -537,8 +537,51 @@ async function uploadAvatar(req, res) {
   res.json(success({ id: user.id, avatarUrl, nickname: user.nickname }, '头像更新成功'));
 }
 
-async function getAdminProfile(req, res) { res.json(success(req.admin)); }
+async function getAdminProfile(req, res) {
+  const a = req.admin;
+  const json = a && typeof a.toJSON === 'function' ? a.toJSON() : { ...(a || {}) };
+  delete json.passwordHash;
+  res.json(success({
+    id: json.id,
+    username: json.username,
+    role: json.role,
+    courtId: json.courtId,
+    realName: json.realName,
+    phone: json.phone,
+    status: json.status,
+    lastLoginAt: json.lastLoginAt,
+    hasPassword: typeof a?.verifyPassword === 'function'
+  }));
+}
 async function logout(req, res) { res.json(success(null, '已登出')); }
+
+async function changeAdminPassword(req, res) {
+  const oldPassword = String((req.body && req.body.oldPassword) || '');
+  const newPassword = String((req.body && req.body.newPassword) || '');
+  if (!oldPassword || !newPassword) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '请输入原密码和新密码');
+  }
+  if (newPassword.length < 8) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '新密码至少 8 位');
+  }
+  if (newPassword.length > 64) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '新密码过长');
+  }
+  if (oldPassword === newPassword) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '新密码不能与原密码相同');
+  }
+  const admin = req.admin;
+  if (!admin || typeof admin.verifyPassword !== 'function' || typeof admin.save !== 'function') {
+    throw new BizError(ErrorCode.FORBIDDEN, '当前账号为微信登录，请在小程序内管理，无需后台密码');
+  }
+  if (!(await admin.verifyPassword(oldPassword))) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '原密码错误');
+  }
+  admin.passwordHash = newPassword;
+  await admin.save();
+  logger.info(`[changeAdminPassword] adminId=${admin.id} username=${admin.username}`);
+  res.json(success(null, '密码已更新，请使用新密码重新登录'));
+}
 
 async function getMyCourts(req, res) {
   const userId = req.user.id;
@@ -667,5 +710,5 @@ async function getMyTeams(req, res) {
 module.exports = {
   adminLogin, refreshToken, userLogin, userLoginTest, registerRole, getUserProfile, updateUserProfile,
   uploadAvatar, uploadCourtImage, getMyCourts, updateMyCourt, getMyTeams, getAdminProfile, logout,
-  getPublicMeta, searchClaimableCourts, claimCourt
+  getPublicMeta, searchClaimableCourts, claimCourt, changeAdminPassword
 };

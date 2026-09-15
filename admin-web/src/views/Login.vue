@@ -36,9 +36,7 @@
       </el-form>
 
       <div class="tips">
-        <p>测试账号：</p>
-        <p>超级管理员：admin / admin123</p>
-        <p>场地方管理员：tianhe_admin / court123</p>
+        <p>请使用管理员账号登录。首次登录后请到「账号安全」修改初始密码。</p>
       </div>
     </div>
   </div>

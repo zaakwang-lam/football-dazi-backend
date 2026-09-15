@@ -19,7 +19,8 @@ const routes = [
       { path: 'dashboard', name: 'CourtDashboard', component: () => import('@/views/court/Dashboard.vue'), meta: { title: '工作台' } },
       { path: 'courts', name: 'CourtList', component: () => import('@/views/court/CourtList.vue'), meta: { title: '场地管理' } },
       { path: 'orders', name: 'CourtOrders', component: () => import('@/views/court/Orders.vue'), meta: { title: '订单管理' } },
-      { path: 'finance', name: 'CourtFinance', component: () => import('@/views/court/Finance.vue'), meta: { title: '财务管理' } }
+      { path: 'finance', name: 'CourtFinance', component: () => import('@/views/court/Finance.vue'), meta: { title: '财务管理' } },
+      { path: 'account', name: 'CourtAccount', component: () => import('@/views/Account.vue'), meta: { title: '账号安全' } }
     ]
   },
   {
@@ -34,7 +35,8 @@ const routes = [
       { path: 'teams', name: 'OpsTeams', component: () => import('@/views/ops/Teams.vue'), meta: { title: '球队管理' } },
       { path: 'courts', name: 'OpsCourts', component: () => import('@/views/ops/Courts.vue'), meta: { title: '场地审核' } },
       { path: 'orders', name: 'OpsOrders', component: () => import('@/views/ops/Orders.vue'), meta: { title: '全平台订单' } },
-      { path: 'finance', name: 'OpsFinance', component: () => import('@/views/ops/Finance.vue'), meta: { title: '财务管理' } }
+      { path: 'finance', name: 'OpsFinance', component: () => import('@/views/ops/Finance.vue'), meta: { title: '财务管理' } },
+      { path: 'account', name: 'OpsAccount', component: () => import('@/views/Account.vue'), meta: { title: '账号安全' } }
     ]
   },
   {
