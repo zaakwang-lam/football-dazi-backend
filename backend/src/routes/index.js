@@ -56,6 +56,8 @@ router.get('/api/user/profile', userAuth(), authCtrl.getUserProfile);
 router.put('/api/v1/user/profile', userAuth(), authCtrl.updateUserProfile);
 router.post('/api/v1/user/avatar', userAuth(), authCtrl.uploadAvatar);
 router.post('/api/user/register-role', userAuth(), authCtrl.registerRole);
+router.get('/api/user/courts/claimable', userAuth(), authCtrl.searchClaimableCourts);
+router.post('/api/user/courts/:id/claim', userAuth(), authCtrl.claimCourt);
 router.get('/api/user/me/courts', userAuth(), authCtrl.getMyCourts);
 router.put('/api/user/me/courts/:id', userAuth(), authCtrl.updateMyCourt);
 router.post('/api/user/me/courts/:id/image', userAuth(), authCtrl.uploadCourtImage);

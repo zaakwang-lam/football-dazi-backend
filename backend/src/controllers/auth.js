@@ -117,6 +117,112 @@ async function tryClaimImportedCourt(userId, courtInfo, Court, Op) {
   return hit;
 }
 
+function claimStateOf(court, userId) {
+  const oid = Number(court.ownerId) || 0;
+  if (oid && oid === Number(userId)) return 'mine';
+  if (oid > 0) return 'taken';
+  return 'claimable';
+}
+
+function serializeClaimable(c, userId) {
+  const images = Array.isArray(c.images) ? c.images : [];
+  const state = claimStateOf(c, userId);
+  return {
+    id: c.id,
+    name: c.name,
+    address: c.address || '',
+    district: c.district || '',
+    phone: c.phone || '',
+    coverUrl: images[0] || '',
+    claimState: state,
+    claimed: state !== 'claimable'
+  };
+}
+
+async function grantCourtOwner(user, court, t) {
+  court.ownerId = user.id;
+  if (Number(court.status) !== 1) court.status = 1;
+  await court.save({ transaction: t });
+  const currentRoles = Array.isArray(user.roles) ? [...user.roles].filter(Boolean) : [];
+  user.role = 'court';
+  user.courtId = court.id;
+  user.roles = [...new Set([...currentRoles, 'user', 'court'])];
+  await user.save({ transaction: t });
+}
+
+async function searchClaimableCourts(req, res) {
+  const raw = String(req.query.q || req.query.keyword || '').trim();
+  if (raw.length < 2) return res.json(success({ list: [], total: 0 }));
+  const userId = Number(req.user.id);
+  const { Court } = require('../models');
+  const { Op } = require('sequelize');
+  const kw = raw.slice(0, 40).replace(/[%_\\]/g, '');
+  if (kw.length < 2) return res.json(success({ list: [], total: 0 }));
+  const like = `%${kw}%`;
+  const rows = await Court.findAll({
+    where: {
+      status: { [Op.ne]: -1 },
+      [Op.or]: [
+        { name: { [Op.like]: like } },
+        { address: { [Op.like]: like } },
+        { district: { [Op.like]: like } }
+      ]
+    },
+    attributes: ['id', 'name', 'address', 'district', 'phone', 'ownerId', 'status', 'images'],
+    limit: 20,
+    order: [['id', 'ASC']]
+  });
+  const list = rows.map((c) => serializeClaimable(c, userId));
+  list.sort((a, b) => {
+    const rank = { claimable: 0, mine: 1, taken: 2 };
+    return (rank[a.claimState] - rank[b.claimState]) || a.name.localeCompare(b.name, 'zh-CN');
+  });
+  res.json(success({ list, total: list.length }));
+}
+
+async function claimCourt(req, res) {
+  const userId = Number(req.user.id);
+  const courtId = Number(req.params.id);
+  if (!courtId) throw new BizError(ErrorCode.PARAM_INVALID, '缺少球场 ID');
+  const { Court, User } = require('../models');
+  const { sequelize } = require('../utils/db');
+  const t = await sequelize.transaction();
+  try {
+    const user = await User.findByPk(userId, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!user) throw new BizError(ErrorCode.NOT_FOUND, '用户不存在');
+    const court = await Court.findByPk(courtId, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!court || Number(court.status) === -1) throw new BizError(ErrorCode.NOT_FOUND, '球场不存在');
+
+    const oid = Number(court.ownerId) || 0;
+    if (oid && oid !== userId) {
+      throw new BizError(ErrorCode.CONFLICT, '该球场已被其他球场方认领');
+    }
+    if (!oid) {
+      await grantCourtOwner(user, court, t);
+      logger.info(`[claimCourt] userId=${userId} courtId=${court.id} name=${court.name}`);
+    } else {
+      user.role = 'court';
+      user.courtId = court.id;
+      const roles = Array.isArray(user.roles) ? [...user.roles] : [];
+      user.roles = [...new Set([...roles, 'user', 'court'])];
+      await user.save({ transaction: t });
+    }
+    await t.commit();
+    res.json(success({
+      role: 'court',
+      roles: user.roles,
+      courtId: court.id,
+      claimed: true,
+      courtStatus: Number(court.status) === 1 ? 'approved' : 'pending',
+      court: serializeClaimable(court, userId),
+      message: '已认领，可直接编辑球场信息、接收订单'
+    }, '认领成功'));
+  } catch (err) {
+    await t.rollback();
+    throw err;
+  }
+}
+
 async function adminLogin(req, res) {
   const { username, password } = req.body;
   if (!username || !password) throw new BizError(ErrorCode.PARAM_INVALID, '请输入用户名和密码');
@@ -283,7 +389,9 @@ async function registerRole(req, res) {
   const user = await User.findByPk(userId);
   if (!user) throw new BizError(ErrorCode.NOT_FOUND, '用户不存在');
   const currentRoles = Array.isArray(user.roles) ? [...user.roles].filter(Boolean) : [];
-  if (currentRoles.includes(role)) throw new BizError(ErrorCode.FORBIDDEN, `已注册过 ${role} 角色`);
+  if (role === 'user' && currentRoles.includes('user')) {
+    throw new BizError(ErrorCode.FORBIDDEN, '已注册过 user 角色');
+  }
 
   if (role === 'court') {
     if (!courtInfo || !courtInfo.name || !courtInfo.address) throw new BizError(ErrorCode.PARAM_INVALID, '请填写球场名称、地址');
@@ -559,5 +667,5 @@ async function getMyTeams(req, res) {
 module.exports = {
   adminLogin, refreshToken, userLogin, userLoginTest, registerRole, getUserProfile, updateUserProfile,
   uploadAvatar, uploadCourtImage, getMyCourts, updateMyCourt, getMyTeams, getAdminProfile, logout,
-  getPublicMeta
+  getPublicMeta, searchClaimableCourts, claimCourt
 };
