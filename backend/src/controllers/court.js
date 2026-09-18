@@ -182,6 +182,7 @@ async function getCourtSchedule(req, res) {
     grouped[dateStr].push({
       id: s.id,
       timeSlot: s.timeSlot,
+      pitchType: s.pitchType || '5人场',
       status: s.status,
       price: parseFloat(s.price || 0)
     });
@@ -330,23 +331,51 @@ async function publishFreeSlots(req, res) {
   if (court.status !== 1) {
     throw new BizError(ErrorCode.FORBIDDEN, '场地审核通过后才能发布空闲信息');
   }
+  const ALLOWED_PITCH = ['5人场', '7人场', '11人场'];
   const records = [];
   for (const slot of slots) {
     if (!slot.date || !slot.timeSlot) continue;
-    const existing = await CourtSchedule.findOne({
-      where: { courtId: id, date: slot.date, timeSlot: slot.timeSlot }
-    });
-    if (existing) continue;
+    const pitchType = ALLOWED_PITCH.includes(slot.pitchType) ? slot.pitchType : '5人场';
+    if (slot.price === undefined || slot.price === null || slot.price === '') {
+      throw new BizError(ErrorCode.PARAM_INVALID, '请填写场次费用');
+    }
+    const price = Number(slot.price);
+    if (Number.isNaN(price) || price < 0) {
+      throw new BizError(ErrorCode.PARAM_INVALID, '场次费用需为不小于 0 的数字');
+    }
+    const existingWhere = {
+      courtId: id,
+      date: slot.date,
+      timeSlot: slot.timeSlot
+    };
+    if (pitchType === '5人场') {
+      existingWhere[Op.or] = [
+        { pitchType: '5人场' },
+        { pitchType: null },
+        { pitchType: '' }
+      ];
+    } else {
+      existingWhere.pitchType = pitchType;
+    }
+    const existing = await CourtSchedule.findOne({ where: existingWhere });
+    if (existing) {
+      existing.price = price;
+      existing.pitchType = pitchType;
+      existing.status = existing.status === 'booked' ? 'booked' : 'free';
+      await existing.save();
+      records.push(existing);
+      continue;
+    }
     const rec = await CourtSchedule.create({
       courtId: id, date: slot.date, timeSlot: slot.timeSlot,
-      price: slot.price != null ? slot.price : court.price, status: 'free'
+      pitchType, price, status: 'free'
     });
     records.push(rec);
   }
   res.json(success({
     published: records.length,
     slots: records.map(r => ({
-      id: r.id, date: r.date, timeSlot: r.timeSlot,
+      id: r.id, date: r.date, timeSlot: r.timeSlot, pitchType: r.pitchType || '5人场',
       price: parseFloat(r.price), status: r.status
     }))
   }, `成功发布 ${records.length} 个空闲时段`));
@@ -365,6 +394,7 @@ async function getFreeSlots(req, res) {
   res.json(success({
     list: slots.map(s => ({
       id: s.id, date: s.date, timeSlot: s.timeSlot,
+      pitchType: s.pitchType || '5人场',
       price: parseFloat(s.price), status: s.status
     })),
     dateFrom: from, dateTo: to

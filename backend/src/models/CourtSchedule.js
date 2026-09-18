@@ -7,6 +7,7 @@ module.exports = (sequelize) => {
     courtId: { type: DataTypes.INTEGER, allowNull: false, field: 'court_id' },
     date: { type: DataTypes.DATEONLY, allowNull: false },
     timeSlot: { type: DataTypes.STRING(16), allowNull: false, field: 'time_slot' },
+    pitchType: { type: DataTypes.STRING(16), allowNull: true, defaultValue: '5人场', field: 'pitch_type' },
     status: {
       type: DataTypes.ENUM('free', 'booked', 'closed'),
       defaultValue: 'free'
