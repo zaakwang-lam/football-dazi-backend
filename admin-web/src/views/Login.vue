@@ -3,7 +3,7 @@
     <div class="login-card">
       <div class="brand">
         <div class="logo">⚽</div>
-        <h1>一起搭球后台</h1>
+        <h1>爱拍球后台</h1>
         <p class="subtitle">广州业余足球运营管理平台</p>
       </div>
 
@@ -73,7 +73,6 @@ async function onSubmit() {
       const res = await authStore.login(form);
       if (res.code === 0) {
         ElMessage.success('登录成功');
-        // 根据角色跳转
         const target = res.data.admin.role === 'court_admin' ? '/dashboard' : '/ops/dashboard';
         router.push(target);
       }
