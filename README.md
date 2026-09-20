@@ -141,7 +141,7 @@ backend/
 
 ### 配置文件
 ```env
-WX_APPID=wxb3f1e355853399c8
+WX_APPID=wx08b512fda8bed423
 WX_MCHID=1900000109
 WX_PAY_KEY=your_32_chars_api_key_for_md5_sign
 WX_NOTIFY_URL=https://api.footballdazi.com/api/payment/notify
@@ -215,4 +215,4 @@ curl -X POST http://localhost:3000/api/v1/orders \
 ---
 
 **作者**：懂王
-**最后更新**：2026-07-23
+**最后更新**：2026-09-20

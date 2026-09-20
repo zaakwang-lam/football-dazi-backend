@@ -28,7 +28,7 @@ module.exports = {
   },
 
   wechat: {
-    appid: process.env.WX_APPID || 'wxb3f1e355853399c8',
+    appid: process.env.WX_APPID || 'wx08b512fda8bed423',
     secret: process.env.WX_SECRET,
     mchid: process.env.WX_MCHID,
     payKey: process.env.WX_PAY_KEY,
