@@ -1,7 +1,7 @@
 {
   "name": "football-dazi-admin-web",
   "version": "1.0.0",
-  "description": "一起搭球 - 后台管理系统 (场地方+运营)",
+  "description": "爱拍球 - 后台管理系统 (场地方+运营)",
   "private": true,
   "type": "module",
   "scripts": {

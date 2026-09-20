@@ -5,7 +5,7 @@ require('dotenv').config();
 module.exports = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT) || 3000,
-  appName: process.env.APP_NAME || '一起搭球',
+  appName: process.env.APP_NAME || '爱拍球',
 
   db: {
     host: process.env.DB_HOST || 'localhost',
