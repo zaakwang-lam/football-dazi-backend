@@ -12,6 +12,7 @@ const LfgPost = require('./LfgPost')(sequelize);
 const LfgJoin = require('./LfgJoin')(sequelize);
 const Checkin = require('./Checkin')(sequelize);
 const AaPayment = require('./AaPayment')(sequelize);
+const AaPaymentItem = require('./AaPaymentItem')(sequelize);
 const Admin = require('./Admin')(sequelize);
 const PaymentOrder = require('./PaymentOrder')(sequelize);
 const PaymentRefund = require('./PaymentRefund')(sequelize);
@@ -51,6 +52,9 @@ Checkin.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 Team.hasMany(AaPayment, { foreignKey: 'teamId', as: 'aaPayments' });
 AaPayment.belongsTo(Team, { foreignKey: 'teamId', as: 'team' });
+AaPayment.hasMany(AaPaymentItem, { foreignKey: 'paymentId', as: 'items' });
+AaPaymentItem.belongsTo(AaPayment, { foreignKey: 'paymentId', as: 'payment' });
+AaPaymentItem.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 Court.belongsTo(User, { foreignKey: 'ownerId', as: 'owner' });
 User.hasMany(Court, { foreignKey: 'ownerId', as: 'ownedCourts' });
@@ -70,6 +74,7 @@ module.exports = {
   LfgJoin,
   Checkin,
   AaPayment,
+  AaPaymentItem,
   Admin,
   PaymentOrder,
   PaymentRefund,

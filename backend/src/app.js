@@ -133,6 +133,18 @@ async function ensureLfgJoinTable() {
   }
 }
 
+/** 球队 AA 草稿/发起/记账（不接微信支付） */
+async function ensureAaPaymentTables() {
+  try {
+    const { AaPayment } = require('./models');
+    await AaPayment.sync({ alter: true });
+    logger.info('✅ aa_payments 表已同步');
+  } catch (err) {
+    logger.warn(`⚠️ aa_payments 表同步跳过: ${err.message}`);
+  }
+}
+
+
 async function ensureCourtImportColumns() {
   const alters = [
     "ALTER TABLE courts MODIFY COLUMN owner_id INT NULL",
@@ -161,6 +173,7 @@ async function start() {
     await ensureCourtImportColumns();
     await ensureBannerTable();
     await ensureLfgJoinTable();
+      await ensureAaPaymentTables();
     app.listen(config.port, () => {
       logger.info('🚀 「爱拍球」后端服务启动成功');
       logger.info(`📍 端口: ${config.port}`);

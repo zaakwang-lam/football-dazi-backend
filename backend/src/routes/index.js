@@ -104,4 +104,12 @@ router.get('/api/admin/teams', adminAuth(['super_admin', 'ops']), teamCtrl.admin
 router.put('/api/admin/teams/:id', adminAuth(['super_admin', 'ops']), teamCtrl.adminUpdateTeam);
 router.delete('/api/admin/teams/:id', adminAuth(['super_admin', 'ops']), teamCtrl.adminDeleteTeam);
 
+const aaCtrl = require('../controllers/aa');
+router.get('/api/v1/teams/:id/aa', userAuth(), aaCtrl.list);
+router.post('/api/v1/teams/:id/aa', userAuth(), aaCtrl.create);
+router.get('/api/v1/teams/:id/aa/:aaId', userAuth(), aaCtrl.get);
+router.put('/api/v1/teams/:id/aa/:aaId', userAuth(), aaCtrl.update);
+router.post('/api/v1/teams/:id/aa/:aaId/initiate', userAuth(), aaCtrl.initiate);
+router.post('/api/v1/teams/:id/aa/:aaId/items/:itemId/mark-paid', userAuth(), aaCtrl.markPaid);
+
 module.exports = router;
