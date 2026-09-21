@@ -1,11 +1,9 @@
 // src/controllers/aa.js
 // 球队 AA 草稿/发起/记账控制器（不接微信支付）
-const { AaPayment, AaPaymentItem, Team, TeamMember, User, LfgPost } = require('../models');
+const { AaPayment, AaPaymentItem, Team, TeamMember } = require('../models');
 const { success, BizError, ErrorCode } = require('../utils/response');
-const { sequelize } = require('../models');
 const logger = require('../utils/logger');
 
-// 工具：校验当前用户是球队队长
 async function assertCaptain(teamId, userId) {
   const team = await Team.findByPk(teamId);
   if (!team) throw new BizError(ErrorCode.NOT_FOUND, '球队不存在');
@@ -13,17 +11,16 @@ async function assertCaptain(teamId, userId) {
   return team;
 }
 
-// 1. 列表（队长看球队所有 AA）
 async function list(req, res) {
   const { id: teamId } = req.params;
   await assertCaptain(teamId, req.user.id);
-  const list = await AaPayment.findAll({
+  const rows = await AaPayment.findAll({
     where: { teamId },
     include: [{ model: AaPaymentItem, as: 'items' }],
     order: [['id', 'DESC']]
   });
   res.json(success({
-    list: list.map(a => ({
+    list: rows.map(a => ({
       id: a.id, teamId: a.teamId, lfgId: a.lfgId, title: a.title, remark: a.remark,
       totalAmount: Number(a.totalAmount), perAmount: Number(a.perAmount),
       matchEnded: !!a.matchEnded, status: a.status,
@@ -36,7 +33,6 @@ async function list(req, res) {
   }));
 }
 
-// 2. 创建草稿
 async function create(req, res) {
   const { id: teamId } = req.params;
   const userId = req.user.id;
@@ -47,7 +43,6 @@ async function create(req, res) {
     throw new BizError(ErrorCode.PARAM_INVALID, '至少勾选一名队员');
   }
 
-  // 验证队员都属于本队
   const members = await TeamMember.findAll({ where: { teamId, status: 1 } });
   const memberIds = new Set(members.map(m => m.userId));
   for (const it of items) {
@@ -71,7 +66,6 @@ async function create(req, res) {
     status: 'draft'
   });
 
-  // 批量创建 items
   for (const it of items) {
     await AaPaymentItem.create({
       paymentId: aa.id,
@@ -87,7 +81,6 @@ async function create(req, res) {
   res.json(success({ id: aa.id, totalAmount, perAmount }));
 }
 
-// 3. 获取详情
 async function get(req, res) {
   const { id: teamId, aaId } = req.params;
   await assertCaptain(teamId, req.user.id);
@@ -107,7 +100,6 @@ async function get(req, res) {
   }));
 }
 
-// 4. 修改草稿（仅 status='draft' 可改）
 async function update(req, res) {
   const { id: teamId, aaId } = req.params;
   await assertCaptain(teamId, req.user.id);
@@ -121,9 +113,7 @@ async function update(req, res) {
   if (totalAmount !== undefined) aa.totalAmount = totalAmount;
 
   if (Array.isArray(items) && items.length > 0) {
-    const perAmount = items.length > 0 ? totalAmount / items.length : 0;
-    aa.perAmount = perAmount;
-    // 删旧 items 重建
+    aa.perAmount = items.length > 0 ? Number(totalAmount || aa.totalAmount) / items.length : 0;
     await AaPaymentItem.destroy({ where: { paymentId: aaId } });
     for (const it of items) {
       await AaPaymentItem.create({
@@ -142,7 +132,6 @@ async function update(req, res) {
   res.json(success({ id: aa.id }));
 }
 
-// 5. 发起（draft → collecting）—— 必须确认比赛已结束
 async function initiate(req, res) {
   const { id: teamId, aaId } = req.params;
   await assertCaptain(teamId, req.user.id);
@@ -150,7 +139,6 @@ async function initiate(req, res) {
   if (!aa) throw new BizError(ErrorCode.NOT_FOUND, 'AA 记录不存在');
   if (aa.status !== 'draft') throw new BizError(ErrorCode.FORBIDDEN, '仅草稿可发起');
 
-  // 必须确认比赛已结束
   const { matchEnded } = req.body;
   if (!matchEnded) {
     throw new BizError(ErrorCode.PARAM_INVALID, '发起前必须确认比赛已结束');
@@ -164,7 +152,6 @@ async function initiate(req, res) {
   res.json(success({ id: aa.id, status: aa.status }));
 }
 
-// 6. 标记已付（队长手动标记某队员已付）
 async function markPaid(req, res) {
   const { id: teamId, aaId, itemId } = req.params;
   await assertCaptain(teamId, req.user.id);
@@ -181,7 +168,7 @@ async function markPaid(req, res) {
   item.payStatus = 'paid';
   await item.save();
 
-  logger.info(`[aa] 标记已付 aaId=${aaId} itemId=${itemId}');
+  logger.info(`[aa] 标记已付 aaId=${aaId} itemId=${itemId}`);
   res.json(success({ id: item.id, payStatus: item.payStatus }));
 }
 
