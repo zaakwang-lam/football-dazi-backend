@@ -10,7 +10,7 @@ const { success, fail, BizError, ErrorCode } = require('../utils/response');
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require('../utils/jwt');
 
 const AUDIT_TEST_OPENID = 'audit_test_openid_dual_role';
-const EXPECTED_WX_APPID = 'wxb3f1e355853399c8';
+const EXPECTED_WX_APPID = 'wx08b512fda8bed423';
 
 function describeWxLoginError(errcode, errmsg) {
   const code = Number(errcode);

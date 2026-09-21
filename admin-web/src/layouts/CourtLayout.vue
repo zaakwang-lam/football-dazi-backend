@@ -3,7 +3,7 @@
     <el-aside width="220px" class="sidebar">
       <div class="logo">
         <span class="logo-icon">⚽</span>
-        <span class="logo-text">一起搭球</span>
+        <span class="logo-text">爱拍球</span>
       </div>
 
       <el-menu
