@@ -3,6 +3,7 @@
 const { AaPayment, AaPaymentItem, Team, TeamMember } = require('../models');
 const { success, BizError, ErrorCode } = require('../utils/response');
 const logger = require('../utils/logger');
+const { ensureAaPaymentTables } = require('../utils/ensure-aa-tables');
 
 async function assertCaptain(teamId, userId) {
   const team = await Team.findByPk(teamId);
@@ -181,11 +182,18 @@ async function markPaid(req, res) {
   res.json(success({ id: item.id, payStatus: item.payStatus }));
 }
 
+function withTables(fn) {
+  return async (req, res) => {
+    await ensureAaPaymentTables();
+    return fn(req, res);
+  };
+}
+
 module.exports = {
-  list,
-  create,
-  get,
-  update,
-  initiate,
-  markPaid
+  list: withTables(list),
+  create: withTables(create),
+  get: withTables(get),
+  update: withTables(update),
+  initiate: withTables(initiate),
+  markPaid: withTables(markPaid)
 };
