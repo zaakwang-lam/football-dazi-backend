@@ -7,13 +7,22 @@ const logger = require('../utils/logger');
 async function assertCaptain(teamId, userId) {
   const team = await Team.findByPk(teamId);
   if (!team) throw new BizError(ErrorCode.NOT_FOUND, '球队不存在');
-  if (team.captainId !== userId) throw new BizError(ErrorCode.FORBIDDEN, '仅队长可操作 AA');
+  if (Number(team.captainId) !== Number(userId)) throw new BizError(ErrorCode.FORBIDDEN, '仅队长可操作 AA');
+  return team;
+}
+
+async function assertMember(teamId, userId) {
+  const team = await Team.findByPk(teamId);
+  if (!team) throw new BizError(ErrorCode.NOT_FOUND, '球队不存在');
+  if (Number(team.captainId) === Number(userId)) return team;
+  const member = await TeamMember.findOne({ where: { teamId, userId, status: 1 } });
+  if (!member) throw new BizError(ErrorCode.FORBIDDEN, '仅本队队员可查看 AA');
   return team;
 }
 
 async function list(req, res) {
   const { id: teamId } = req.params;
-  await assertCaptain(teamId, req.user.id);
+  await assertMember(teamId, req.user.id);
   const rows = await AaPayment.findAll({
     where: { teamId },
     include: [{ model: AaPaymentItem, as: 'items' }],
@@ -83,7 +92,7 @@ async function create(req, res) {
 
 async function get(req, res) {
   const { id: teamId, aaId } = req.params;
-  await assertCaptain(teamId, req.user.id);
+  await assertMember(teamId, req.user.id);
   const aa = await AaPayment.findOne({
     where: { id: aaId, teamId },
     include: [{ model: AaPaymentItem, as: 'items' }]
