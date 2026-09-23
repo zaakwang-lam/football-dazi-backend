@@ -94,7 +94,11 @@ const HEADER_MAP = {
   '*省*市*区': 'district', '地区': 'district', 'district': 'district',
   '详细地址': 'address', '地址': 'address', 'address': 'address',
   '联系人': 'contactName', '联系人姓名': 'contactName', 'contactname': 'contactName',
-  '联系电话': 'phone', '电话': 'phone', '手机': 'phone', 'phone': 'phone'
+  '联系电话': 'phone', '电话': 'phone', '手机': 'phone', 'phone': 'phone',
+  '营业时间': 'hours', '开放时间': 'hours', 'hours': 'hours',
+  '座标': 'coord', '坐标': 'coord', '经纬度': 'coord', 'coord': 'coord',
+  '经度': 'longitude', 'longitude': 'longitude', 'lng': 'longitude',
+  '纬度': 'latitude', 'latitude': 'latitude', 'lat': 'latitude'
 };
 
 function normalizeHeader(h) {
@@ -113,12 +117,16 @@ function mapRows(rawRows) {
     if (n.indexOf('地址') >= 0 || n === 'address') return 'address';
     if (n.indexOf('联系人') >= 0 || n === 'contactname') return 'contactName';
     if (n.indexOf('电话') >= 0 || n.indexOf('手机') >= 0 || n === 'phone') return 'phone';
+    if (n.indexOf('营业') >= 0 || n.indexOf('开放时间') >= 0 || n === 'hours' || n === 'opentime') return 'hours';
+    if (n.indexOf('座标') >= 0 || n.indexOf('坐标') >= 0 || n.indexOf('经纬') >= 0 || n === 'coord') return 'coord';
+    if (n === '经度' || n === 'longitude' || n === 'lng') return 'longitude';
+    if (n === '纬度' || n === 'latitude' || n === 'lat') return 'latitude';
     return '';
   });
   const out = [];
   for (let i = 1; i < rawRows.length; i++) {
     const row = rawRows[i] || [];
-    const obj = { name: '', district: '', address: '', contactName: '', phone: '' };
+    const obj = { name: '', district: '', address: '', contactName: '', phone: '', hours: '', coord: '', longitude: '', latitude: '' };
     keys.forEach((k, idx) => {
       if (!k) return;
       obj[k] = String(row[idx] == null ? '' : row[idx]).trim();
@@ -129,8 +137,8 @@ function mapRows(rawRows) {
 }
 
 function buildCsvTemplate() {
-  const header = ['球场名称', '省市区', '详细地址', '联系人', '联系电话'];
-  const example = ['白云新海足球场', '广东省 广州市 白云区', '广州市白云区新海路1号', '张经理', '13800138000'];
+  const header = ['球场名称', '省市区', '详细地址', '联系人', '联系电话', '营业时间', '座标'];
+  const example = ['白云新海足球场', '广东省 广州市 白云区', '广州市白云区新海路1号', '张经理', '13800138000', '08:00-22:00', '113.324500,23.135600'];
   const line = (arr) => arr.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',');
   return `\uFEFF${line(header)}\r\n${line(example)}\r\n`;
 }
@@ -143,16 +151,63 @@ function buildExcelXmlTemplate() {
  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
  <Worksheet ss:Name="球场导入">
   <Table>
-   <Row>${cells(['球场名称', '省市区', '详细地址', '联系人', '联系电话'])}</Row>
-   <Row>${cells(['白云新海足球场', '广东省 广州市 白云区', '广州市白云区新海路1号', '张经理', '13800138000'])}</Row>
+   <Row>${cells(['球场名称', '省市区', '详细地址', '联系人', '联系电话', '营业时间', '座标'])}</Row>
+   <Row>${cells(['白云新海足球场', '广东省 广州市 白云区', '广州市白云区新海路1号', '张经理', '13800138000', '08:00-22:00', '113.324500,23.135600'])}</Row>
   </Table>
  </Worksheet>
 </Workbook>`;
+}
+
+
+/** 座标：经度,纬度（腾讯/高德复制）。纬度在前也会自动识别。 */
+function parseCoord(raw) {
+  const s = String(raw || '').trim()
+    .replace(/[（）()]/g, ' ')
+    .replace(/经度|纬度|longitude|latitude|lng|lat/gi, ' ')
+    .replace(/[，,;；|/]/g, ' ');
+  const nums = s.match(/-?\d+(?:\.\d+)?/g);
+  if (!nums || nums.length < 2) return { error: '座标格式无效，请填经度,纬度，如 113.324500,23.135600' };
+  const a = Number(nums[0]);
+  const b = Number(nums[1]);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return { error: '座标不是数字' };
+  let lng;
+  let lat;
+  if (Math.abs(a) > 60 && Math.abs(b) <= 90) {
+    lng = a; lat = b;
+  } else if (Math.abs(b) > 60 && Math.abs(a) <= 90) {
+    lat = a; lng = b;
+  } else if (Math.abs(a) <= 180 && Math.abs(b) <= 90) {
+    lng = a; lat = b;
+  } else {
+    return { error: '座标超出经纬度范围' };
+  }
+  if (Math.abs(lng) > 180 || Math.abs(lat) > 90) return { error: '座标超出经纬度范围' };
+  return {
+    longitude: Number(lng.toFixed(6)),
+    latitude: Number(lat.toFixed(6))
+  };
+}
+
+/** 营业时间：08:00-22:00 */
+function parseHours(raw) {
+  const s = String(raw || '').trim().replace(/：/g, ':').replace(/[～~至到—–]/g, '-');
+  if (!s) return { openTime: '08:00:00', closeTime: '22:00:00' };
+  const m = s.match(/(\d{1,2})\s*:\s*(\d{2})(?:\s*:\s*\d{2})?\s*-\s*(\d{1,2})\s*:\s*(\d{2})/);
+  if (!m) return { error: '营业时间格式应为 08:00-22:00' };
+  const oh = Number(m[1]);
+  const om = Number(m[2]);
+  const ch = Number(m[3]);
+  const cm = Number(m[4]);
+  if (oh > 23 || ch > 23 || om > 59 || cm > 59) return { error: '营业时间不合法' };
+  const pad = (n) => String(n).padStart(2, '0');
+  return { openTime: `${pad(oh)}:${pad(om)}:00`, closeTime: `${pad(ch)}:${pad(cm)}:00` };
 }
 
 module.exports = {
   parseTableBuffer,
   mapRows,
   buildCsvTemplate,
-  buildExcelXmlTemplate
+  buildExcelXmlTemplate,
+  parseCoord,
+  parseHours
 };

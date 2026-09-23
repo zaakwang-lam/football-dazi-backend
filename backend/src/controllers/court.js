@@ -2,7 +2,7 @@
 const { Court, CourtSchedule, Order, User } = require('../models');
 const { success, fail, BizError, ErrorCode } = require('../utils/response');
 const { Op } = require('sequelize');
-const { parseTableBuffer, mapRows, buildCsvTemplate, buildExcelXmlTemplate } = require('../utils/excel-import');
+const { parseTableBuffer, mapRows, buildCsvTemplate, buildExcelXmlTemplate, parseCoord, parseHours } = require('../utils/excel-import');
 const { parseProvinceCity, matchRegion } = require('../utils/region-parse');
 
 function calcDistance(lat1, lng1, lat2, lng2) {
@@ -14,6 +14,19 @@ function calcDistance(lat1, lng1, lat2, lng2) {
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatHours(openTime, closeTime) {
+  const cut = (v) => {
+    if (!v) return '';
+    const s = String(v);
+    const m = s.match(/(\d{1,2}):(\d{2})/);
+    return m ? `${m[1].padStart(2, '0')}:${m[2]}` : '';
+  };
+  const a = cut(openTime);
+  const b = cut(closeTime);
+  if (a && b) return `${a}-${b}`;
+  return a || b || '';
 }
 
 function pickCover(images) {
@@ -154,7 +167,7 @@ async function getCourtDetail(req, res) {
     id: court.id, name: court.name, type: court.type, types,
     price: parseFloat(court.price), address: court.address,
     longitude: court.longitude, latitude: court.latitude,
-    phone: court.phone, openTime: court.openTime, closeTime: court.closeTime,
+    phone: court.phone, openTime: formatHours(court.openTime, court.closeTime) || court.openTime, closeTime: court.closeTime,
     images, coverUrl: pickCover(images), tags: court.tags || [],
     description: court.description, rating: parseFloat(court.rating),
     district: court.district, surfaceTypes: court.surfaceTypes || []
@@ -209,6 +222,12 @@ async function adminListCourts(req, res) {
       address: c.address, phone: c.phone, rating: parseFloat(c.rating),
       district: c.district || '', contactName: c.contactName || '',
       ownerId: c.ownerId, claimed: !!c.ownerId,
+      longitude: c.longitude != null ? Number(c.longitude) : null,
+      latitude: c.latitude != null ? Number(c.latitude) : null,
+      coordText: (c.longitude != null && c.latitude != null)
+        ? `${Number(c.longitude).toFixed(6)},${Number(c.latitude).toFixed(6)}` : '',
+      openTime: c.openTime, closeTime: c.closeTime,
+      hoursText: formatHours(c.openTime, c.closeTime),
       status: c.status, createdAt: c.createdAt,
       images: c.images || [], coverUrl: pickCover(c.images)
     })),
@@ -291,6 +310,44 @@ async function adminDeleteCourt(req, res) {
   }
   await court.update({ status: -1 });
   res.json(success({ id, message: '已删除' }));
+}
+
+async function adminBatchDeleteCourts(req, res) {
+  const admin = req.admin;
+  const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : [])
+    .map((n) => Number(n))
+    .filter((n) => Number.isInteger(n) && n > 0))];
+  if (!ids.length) throw new BizError(ErrorCode.PARAM_INVALID, '当前页没有可删除的场地');
+  if (ids.length > 100) throw new BizError(ErrorCode.PARAM_INVALID, '单次最多删除 100 条');
+
+  const deleted = [];
+  const skipped = [];
+  for (const id of ids) {
+    const court = await Court.findByPk(id);
+    if (!court || court.status === -1) {
+      skipped.push({ id, reason: '场地不存在或已删除' });
+      continue;
+    }
+    if (admin.role === 'court_admin' && court.ownerId !== admin.id) {
+      skipped.push({ id, name: court.name, reason: '无权限' });
+      continue;
+    }
+    const activeOrders = await Order.count({
+      where: { courtId: id, status: { [Op.in]: ['pending', 'booked', 'paid'] } }
+    });
+    if (activeOrders > 0) {
+      skipped.push({ id, name: court.name, reason: `有 ${activeOrders} 个未完成订单` });
+      continue;
+    }
+    await court.update({ status: -1 });
+    deleted.push({ id, name: court.name });
+  }
+  res.json(success({
+    deleted: deleted.length,
+    skipped: skipped.length,
+    deletedList: deleted,
+    skippedList: skipped
+  }, `已删除 ${deleted.length} 条${skipped.length ? `，跳过 ${skipped.length} 条` : ''}`));
 }
 
 async function auditCourt(req, res) {
@@ -448,7 +505,11 @@ async function adminImportCourts(req, res) {
       district: String(r.district || r['省市区'] || r['所在区域'] || '').trim(),
       address: String(r.address || r['详细地址'] || r['地址'] || '').trim(),
       contactName: String(r.contactName || r['联系人'] || '').trim(),
-      phone: String(r.phone || r['联系电话'] || r['电话'] || '').trim()
+      phone: String(r.phone || r['联系电话'] || r['电话'] || '').trim(),
+      hours: String(r.hours || r['营业时间'] || '').trim(),
+      coord: String(r.coord || r['座标'] || r['坐标'] || '').trim(),
+      longitude: r.longitude != null ? String(r.longitude) : '',
+      latitude: r.latitude != null ? String(r.latitude) : ''
     }));
   } else if (body.base64 || body.csv) {
     const raw = body.base64 || body.csv;
@@ -484,6 +545,24 @@ async function adminImportCourts(req, res) {
       skipped.push({ name, reason: '已存在同名球场' });
       continue;
     }
+    const hours = parseHours(row.hours);
+    if (hours.error) {
+      failed.push({ name, reason: hours.error });
+      continue;
+    }
+    let longitude = null;
+    let latitude = null;
+    const coordRaw = String(row.coord || '').trim()
+      || ((row.longitude || row.latitude) ? `${row.longitude || ''},${row.latitude || ''}` : '');
+    if (coordRaw.replace(/[,，\s]/g, '')) {
+      const coord = parseCoord(coordRaw);
+      if (coord.error) {
+        failed.push({ name, reason: coord.error });
+        continue;
+      }
+      longitude = coord.longitude;
+      latitude = coord.latitude;
+    }
     try {
       const court = await Court.create({
         name,
@@ -494,9 +573,11 @@ async function adminImportCourts(req, res) {
         district: String(row.district || '').slice(0, 64),
         phone: String(row.phone || '').slice(0, 20),
         contactName: String(row.contactName || '').slice(0, 32),
+        longitude,
+        latitude,
         price: 0,
-        openTime: '08:00:00',
-        closeTime: '22:00:00',
+        openTime: hours.openTime,
+        closeTime: hours.closeTime,
         surfaceType: '人工草地',
         surfaceTypes: ['人工草地'],
         description: '',
@@ -523,5 +604,5 @@ module.exports = {
   getNearbyCourts, getCourtRegions, getCourtDetail, getCourtSchedule, getFreeSlots, publishFreeSlots,
   evaluateCourt,
   adminListCourts, adminGetCourtDetail, adminCreateCourt, adminUpdateCourt,
-  adminDeleteCourt, auditCourt, adminImportCourts, adminImportTemplate
+  adminDeleteCourt, adminBatchDeleteCourts, auditCourt, adminImportCourts, adminImportTemplate
 };

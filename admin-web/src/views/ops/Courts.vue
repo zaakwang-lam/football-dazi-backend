@@ -3,6 +3,7 @@
     <div class="toolbar">
       <div class="toolbar-title">球场管理</div>
       <div class="toolbar-actions">
+        <el-button type="danger" plain :disabled="!courts.length" :loading="batchDeleting" @click="onBatchDelete">批量删除</el-button>
         <el-button @click="onDownloadTemplate">下载导入模板</el-button>
         <el-upload
           accept=".xlsx,.xls,.csv"
@@ -13,7 +14,7 @@
         </el-upload>
       </div>
     </div>
-    <p class="hint">模板字段：球场名称、省市区、详细地址、联系人、联系电话。导入后的球场默认上架；球场方进驻时若名称匹配，将自动绑定到该球场方可编辑、接单。</p>
+    <p class="hint">模板字段：球场名称、省市区、详细地址、联系人、联系电话、营业时间、座标。营业时间填 08:00-22:00。座标填「经度,纬度」（腾讯/高德地图复制，如 113.324500,23.135600），导入后写入经纬度，小程序据此计算距离。导入后默认上架。</p>
 
     <el-tabs v-model="activeTab" @tab-change="onTabChange">
       <el-tab-pane :label="`待审核 (${counts.pending})`" name="2" />
@@ -29,6 +30,8 @@
       <el-table-column prop="address" label="详细地址" min-width="200" />
       <el-table-column prop="contactName" label="联系人" width="100" />
       <el-table-column prop="phone" label="联系电话" width="130" />
+      <el-table-column prop="hoursText" label="营业时间" width="120" />
+      <el-table-column prop="coordText" label="座标" min-width="180" />
       <el-table-column label="认领" width="90">
         <template #default="{ row }">
           <el-tag :type="row.claimed ? 'success' : 'info'" size="small">{{ row.claimed ? '已认领' : '未认领' }}</el-tag>
@@ -94,6 +97,8 @@
         <el-descriptions-item label="认领">{{ currentCourt.claimed ? '已认领' : '未认领' }}</el-descriptions-item>
         <el-descriptions-item label="省市区" :span="2">{{ currentCourt.district || '无' }}</el-descriptions-item>
         <el-descriptions-item label="地址" :span="2">{{ currentCourt.address }}</el-descriptions-item>
+        <el-descriptions-item label="营业时间">{{ currentCourt.hoursText || '无' }}</el-descriptions-item>
+        <el-descriptions-item label="座标">{{ currentCourt.coordText || '无' }}</el-descriptions-item>
         <el-descriptions-item label="描述" :span="2">
           <pre style="margin: 0; white-space: pre-wrap;">{{ currentCourt.description || '无' }}</pre>
         </el-descriptions-item>
@@ -184,6 +189,7 @@ const editForm = ref({
   description: ''
 });
 const importing = ref(false);
+const batchDeleting = ref(false);
 
 function getStatusType(status) {
   return { 0: 'info', 1: 'success', 2: 'warning', 3: 'info' }[status] || 'info';
@@ -382,6 +388,46 @@ async function onDelete(row) {
   }
 }
 
+async function onBatchDelete() {
+  const rows = courts.value || [];
+  if (!rows.length) {
+    ElMessage.warning('当前页没有数据');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认删除当前页 ${rows.length} 条场地？删除后小程序不再展示（软删除）。有未完成订单的场地会跳过。`,
+      '批量删除',
+      { type: 'warning', confirmButtonText: '删除本页', cancelButtonText: '取消' }
+    );
+  } catch {
+    return;
+  }
+  batchDeleting.value = true;
+  try {
+    const res = await courtApi.batchRemove(rows.map((r) => r.id));
+    if (res.code === 0) {
+      const skipped = res.data?.skippedList || [];
+      ElMessage.success(res.message || '已删除');
+      if (skipped.length) {
+        const names = skipped.slice(0, 5).map((s) => `${s.name || s.id}：${s.reason}`).join('；');
+        ElMessage.warning(`未删除：${names}`);
+      }
+      if (page.value > 1 && rows.length && (res.data?.deleted || 0) >= rows.length) {
+        page.value -= 1;
+      }
+      loadList();
+      loadCounts();
+    } else {
+      ElMessage.error(res.message || '删除失败');
+    }
+  } catch (e) {
+    ElMessage.error(e.message || '删除失败');
+  } finally {
+    batchDeleting.value = false;
+  }
+}
+
 async function onDownloadTemplate() {
   const cells = (arr) => arr.map((c) => `<Cell><Data ss:Type="String">${String(c).replace(/&/g, '&').replace(/</g, '<')}</Data></Cell>`).join('');
   const xml = `<?xml version="1.0"?>
@@ -389,8 +435,8 @@ async function onDownloadTemplate() {
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
  <Worksheet ss:Name="球场导入">
   <Table>
-   <Row>${cells(['球场名称', '省市区', '详细地址', '联系人', '联系电话'])}</Row>
-   <Row>${cells(['白云新海足球场', '广东省 广州市 白云区', '广州市白云区新海路1号', '张经理', '13800138000'])}</Row>
+   <Row>${cells(['球场名称', '省市区', '详细地址', '联系人', '联系电话', '营业时间', '座标'])}</Row>
+   <Row>${cells(['白云新海足球场', '广东省 广州市 白云区', '广州市白云区新海路1号', '张经理', '13800138000', '08:00-22:00', '113.324500,23.135600'])}</Row>
   </Table>
  </Worksheet>
 </Workbook>`;
