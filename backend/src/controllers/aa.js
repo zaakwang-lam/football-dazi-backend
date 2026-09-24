@@ -1,6 +1,6 @@
 // src/controllers/aa.js
 // 球队 AA 草稿/发起/记账控制器（不接微信支付）
-const { AaPayment, AaPaymentItem, Team, TeamMember } = require('../models');
+const { AaPayment, AaPaymentItem, Team, TeamMember, User } = require('../models');
 const { success, BizError, ErrorCode } = require('../utils/response');
 const logger = require('../utils/logger');
 const { ensureAaPaymentTables } = require('../utils/ensure-aa-tables');
@@ -43,26 +43,42 @@ async function list(req, res) {
   }));
 }
 
+function splitFen(totalYuan, n) {
+  const totalFen = Math.round(Number(totalYuan) * 100);
+  if (!Number.isFinite(totalFen) || totalFen <= 0 || n <= 0) return null;
+  const base = Math.floor(totalFen / n);
+  let rem = totalFen - base * n;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const fen = base + (rem > 0 ? 1 : 0);
+    if (rem > 0) rem -= 1;
+    out.push(fen / 100);
+  }
+  return out;
+}
+
 async function create(req, res) {
   const { id: teamId } = req.params;
   const userId = req.user.id;
-  const { lfgId, title, remark, items } = req.body;
+  const { lfgId, title, remark, totalAmount, userIds } = req.body;
   await assertCaptain(teamId, userId);
 
-  if (!Array.isArray(items) || items.length === 0) {
-    throw new BizError(ErrorCode.PARAM_INVALID, '至少勾选一名队员');
+  const total = Math.round(Number(totalAmount) * 100) / 100;
+  if (!Number.isFinite(total) || total <= 0) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '请填写大于 0 的总金额');
   }
+  const ids = [...new Set((Array.isArray(userIds) ? userIds : []).map(Number).filter((n) => n > 0))];
+  if (!ids.length) throw new BizError(ErrorCode.PARAM_INVALID, '请至少勾选一名队员');
 
-  const members = await TeamMember.findAll({ where: { teamId, status: 1 } });
-  const memberIds = new Set(members.map(m => m.userId));
-  for (const it of items) {
-    if (!memberIds.has(it.userId)) {
-      throw new BizError(ErrorCode.FORBIDDEN, `用户 ${it.userId} 不是本队队员`);
-    }
+  const members = await TeamMember.findAll({
+    where: { teamId, status: 1, userId: ids },
+    include: [{ model: User, as: 'user', attributes: ['id', 'nickname'] }]
+  });
+  if (members.length !== ids.length) {
+    throw new BizError(ErrorCode.FORBIDDEN, '勾选了非本队队员');
   }
-
-  const totalAmount = items.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
-  const perAmount = items.length > 0 ? totalAmount / items.length : 0;
+  const amounts = splitFen(total, members.length);
+  const perAmount = Number((total / members.length).toFixed(2));
 
   const aa = await AaPayment.create({
     teamId,
@@ -70,25 +86,67 @@ async function create(req, res) {
     initiatorId: userId,
     title: title || '队费 AA',
     remark: remark || '',
-    totalAmount,
+    totalAmount: total,
     perAmount,
-    matchEnded: 0,
-    status: 'draft'
+    matchEnded: 1,
+    status: 'collecting'
   });
 
-  for (const it of items) {
+  for (let i = 0; i < members.length; i++) {
+    const m = members[i];
     await AaPaymentItem.create({
       paymentId: aa.id,
-      userId: it.userId,
-      displayName: it.displayName || '',
-      amount: it.amount || 0,
-      included: it.included ? 1 : 0,
+      userId: m.userId,
+      displayName: (m.user && m.user.nickname) || '队员',
+      amount: amounts[i],
+      included: 1,
       payStatus: 'unpaid'
     });
   }
 
-  logger.info(`[aa] 草稿创建 teamId=${teamId} aaId=${aa.id} totalAmount=${totalAmount}`);
-  res.json(success({ id: aa.id, totalAmount, perAmount }));
+  logger.info(`[aa] 发起收款 teamId=${teamId} aaId=${aa.id} total=${total} n=${members.length}`);
+  res.json(success({ id: aa.id, totalAmount: total, perAmount, count: members.length }));
+}
+
+async function pay(req, res) {
+  const { id: teamId, aaId } = req.params;
+  const userId = req.user.id;
+  await assertMember(teamId, userId);
+  const aa = await AaPayment.findOne({ where: { id: aaId, teamId } });
+  if (!aa) throw new BizError(ErrorCode.NOT_FOUND, 'AA 记录不存在');
+  if (aa.status !== 'collecting') throw new BizError(ErrorCode.FORBIDDEN, '当前不可支付');
+
+  const item = await AaPaymentItem.findOne({ where: { paymentId: aa.id, userId, included: 1 } });
+  if (!item) throw new BizError(ErrorCode.FORBIDDEN, '你不在本次收款名单里');
+  if (item.payStatus === 'paid') throw new BizError(ErrorCode.CONFLICT, '你已支付');
+  const amount = Number(item.amount);
+  if (!(amount > 0)) throw new BizError(ErrorCode.PARAM_INVALID, '应付金额无效');
+
+  let openid = req.user.openid;
+  if (!openid) {
+    const user = await User.findByPk(userId);
+    openid = user && user.openid;
+  }
+  if (!openid || String(openid).startsWith('audit_test')) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '缺少微信身份，请退出后重新登录再支付');
+  }
+
+  const { generateOrderNo } = require('../utils/wechat-sign');
+  if (!item.outTradeNo) {
+    item.outTradeNo = generateOrderNo('AA');
+    await item.save();
+  }
+  const wechatPay = require('../services/wechat-pay');
+  const payParams = await wechatPay.unifiedOrder({
+    openid,
+    outTradeNo: item.outTradeNo,
+    totalFee: Math.round(amount * 100),
+    body: `队费AA ${aa.title || ''}`.trim().slice(0, 40),
+    notifyUrl: process.env.WX_NOTIFY_URL,
+    attach: `aa:${item.id}`
+  });
+  logger.info(`[aa] 调起支付 aaId=${aa.id} item=${item.id} fee=${amount}`);
+  res.json(success({ itemId: item.id, amount, payParams }));
 }
 
 async function get(req, res) {
@@ -195,5 +253,6 @@ module.exports = {
   get: withTables(get),
   update: withTables(update),
   initiate: withTables(initiate),
-  markPaid: withTables(markPaid)
+  markPaid: withTables(markPaid),
+  pay: withTables(pay)
 };

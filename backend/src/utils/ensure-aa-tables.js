@@ -66,7 +66,9 @@ async function ensureAaPaymentTables() {
       'ALTER TABLE aa_payment_items ADD COLUMN included TINYINT DEFAULT 1',
       "ALTER TABLE aa_payment_items ADD COLUMN pay_status VARCHAR(16) NOT NULL DEFAULT 'unpaid'",
       'ALTER TABLE aa_payment_items ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP',
-      'ALTER TABLE aa_payment_items ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
+      'ALTER TABLE aa_payment_items ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+      'ALTER TABLE aa_payment_items ADD COLUMN out_trade_no VARCHAR(32) NULL',
+      'ALTER TABLE aa_payment_items ADD COLUMN transaction_id VARCHAR(64) NULL'
     ];
     for (const sql of alters) {
       await runSqlIgnore(sql);

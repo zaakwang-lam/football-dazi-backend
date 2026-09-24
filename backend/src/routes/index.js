@@ -111,6 +111,7 @@ router.post('/api/v1/teams/:id/aa', userAuth(), aaCtrl.create);
 router.get('/api/v1/teams/:id/aa/:aaId', userAuth(), aaCtrl.get);
 router.put('/api/v1/teams/:id/aa/:aaId', userAuth(), aaCtrl.update);
 router.post('/api/v1/teams/:id/aa/:aaId/initiate', userAuth(), aaCtrl.initiate);
+router.post('/api/v1/teams/:id/aa/:aaId/pay', userAuth(), aaCtrl.pay);
 router.post('/api/v1/teams/:id/aa/:aaId/items/:itemId/mark-paid', userAuth(), aaCtrl.markPaid);
 
 module.exports = router;

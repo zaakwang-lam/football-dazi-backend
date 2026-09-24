@@ -88,6 +88,25 @@ async function paymentNotify(req, res) {
         await order.save();
         if (order.scheduleId) await CourtSchedule.update({ status: 'booked' }, { where: { id: order.scheduleId } });
         await PaymentOrder.update({ status: 'paid', transactionId: result.transaction_id, payTime: new Date() }, { where: { orderNo: result.out_trade_no } });
+      } else if (String(result.out_trade_no || '').startsWith('AA')) {
+        const { AaPaymentItem, AaPayment } = require('../models');
+        const item = await AaPaymentItem.findOne({ where: { outTradeNo: result.out_trade_no } });
+        if (item && item.payStatus !== 'paid') {
+          const paidFen = parseInt(result.total_fee, 10);
+          const expectFen = Math.round(Number(item.amount) * 100);
+          if (paidFen !== expectFen) {
+            logger.error(`[aa] 金额不一致 out=${result.out_trade_no} paid=${paidFen} expect=${expectFen}`);
+          } else {
+            item.payStatus = 'paid';
+            item.transactionId = result.transaction_id;
+            await item.save();
+            const unpaid = await AaPaymentItem.count({
+              where: { paymentId: item.paymentId, included: 1, payStatus: { [Op.ne]: 'paid' } }
+            });
+            if (unpaid === 0) await AaPayment.update({ status: 'done' }, { where: { id: item.paymentId } });
+            logger.info(`[aa] 支付成功 item=${item.id} txn=${result.transaction_id}`);
+          }
+        }
       }
     }
     res.send(require('../utils/wechat-sign').objToXml({ return_code: 'SUCCESS', return_msg: 'OK' }));

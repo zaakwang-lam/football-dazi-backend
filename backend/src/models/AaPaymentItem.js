@@ -13,7 +13,9 @@ module.exports = (sequelize) => {
       type: DataTypes.STRING(16),
       defaultValue: 'unpaid',
       field: 'pay_status'
-    }
+    },
+    outTradeNo: { type: DataTypes.STRING(32), field: 'out_trade_no' },
+    transactionId: { type: DataTypes.STRING(64), field: 'transaction_id' }
   }, {
     tableName: 'aa_payment_items'
   });
