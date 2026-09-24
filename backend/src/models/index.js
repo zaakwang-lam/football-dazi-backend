@@ -18,6 +18,14 @@ const PaymentOrder = require('./PaymentOrder')(sequelize);
 const PaymentRefund = require('./PaymentRefund')(sequelize);
 const Banner = require('./Banner')(sequelize);
 
+// 批量导入的未认领球场不展示人制
+Court.addHook('beforeCreate', (court) => {
+  if (court.ownerId == null && (!court.type || court.type === '11人制')) {
+    court.type = '';
+    court.types = [];
+  }
+});
+
 // ===== 关联关系 =====
 
 User.hasMany(Order, { foreignKey: 'userId', as: 'orders' });
