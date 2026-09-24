@@ -6,9 +6,7 @@ module.exports = (sequelize) => {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     name: { type: DataTypes.STRING(64), allowNull: false },
     ownerId: { type: DataTypes.INTEGER, allowNull: true, field: 'owner_id' },
-    // 主展示人制（兼容旧逻辑）
-    type: { type: DataTypes.STRING(32), allowNull: false },
-    // 支持的人制多选，与登记表单一致
+    type: { type: DataTypes.STRING(32), allowNull: true, defaultValue: '' },
     types: { type: DataTypes.JSON },
     address: { type: DataTypes.STRING(255) },
     longitude: { type: DataTypes.DECIMAL(10, 6) },

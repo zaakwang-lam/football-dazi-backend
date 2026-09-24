@@ -52,10 +52,19 @@ app.use(errorHandler);
 
 async function ensureCourtTypeColumn() {
   try {
-    await sequelize.query("ALTER TABLE courts MODIFY COLUMN type VARCHAR(32) NOT NULL");
-    logger.info('✅ courts.type 已同步为 VARCHAR(32)');
+    await sequelize.query("ALTER TABLE courts MODIFY COLUMN type VARCHAR(32) NULL DEFAULT ''");
+    logger.info('✅ courts.type 允许为空');
   } catch (err) {
     logger.warn(`⚠️ courts.type 自动同步跳过: ${err.message}`);
+  }
+  try {
+    const [r] = await sequelize.query(
+      "UPDATE courts SET type = '', types = JSON_ARRAY() WHERE owner_id IS NULL AND type = '11人制'"
+    );
+    const n = (r && (r.affectedRows || r.changedRows)) || 0;
+    if (n) logger.info(`✅ 已清除 ${n} 条批量导入球场的默认人制`);
+  } catch (err) {
+    logger.warn(`⚠️ 清除导入默认人制跳过: ${err.message}`);
   }
 }
 
@@ -111,7 +120,6 @@ async function ensureLfgJoinTable() {
         "ALTER TABLE lfg_joins MODIFY COLUMN status VARCHAR(32) NOT NULL DEFAULT 'pending'"
       );
     } catch (e) { /* ignore */ }
-    // 补时间戳列（老表可能没有）
     for (const col of ['created_at', 'updated_at']) {
       try {
         await sequelize.query(
