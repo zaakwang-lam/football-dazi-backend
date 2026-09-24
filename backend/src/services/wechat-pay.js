@@ -5,6 +5,22 @@ const fs = require('fs');
 const config = require('../config');
 const { sign, objToXml, xmlToObj, nonceStr, generateOrderNo } = require('../utils/wechat-sign');
 const logger = require('../utils/logger');
+const { BizError, ErrorCode } = require('../utils/response');
+
+function mchIdOrThrow() {
+  const mchId = String(config.wechat.mchid || '');
+  if (!/^\d{8,10}$/.test(mchId)) {
+    const hint = !mchId ? '为空' : `长度 ${mchId.length}${/\D/.test(mchId) ? '，含非数字' : ''}`;
+    throw new BizError(
+      ErrorCode.PARAM_INVALID,
+      `商户号格式错误（当前${hint}）。请把服务器 .env 写成 WX_MCHID=1118074856（纯数字，不要引号、空格或换行），保存后执行 docker compose up -d --force-recreate backend`
+    );
+  }
+  if (!config.wechat.payKey || String(config.wechat.payKey).length < 16) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '支付密钥未配置。请在服务器 .env 设置 WX_PAY_KEY 为商户平台 APIv2 密钥（32位），然后重启 backend');
+  }
+  return mchId;
+}
 
 const WX_PAY_URL = 'https://api.mch.weixin.qq.com';
 const WX_PAY_API = {
@@ -27,7 +43,7 @@ const WX_PAY_API = {
 async function unifiedOrder({ openid, outTradeNo, totalFee, body, notifyUrl, attach }) {
   const params = {
     appid: config.wechat.appid,
-    mch_id: config.wechat.mchid,
+    mch_id: mchIdOrThrow(),
     nonce_str: nonceStr(),
     body: body,
     out_trade_no: outTradeNo,
@@ -54,16 +70,20 @@ async function unifiedOrder({ openid, outTradeNo, totalFee, body, notifyUrl, att
 
     const result = await xmlToObj(response.data);
     if (result.return_code !== 'SUCCESS') {
-      throw new Error(`微信下单失败: ${result.return_msg}`);
+      const msg = String(result.return_msg || '下单失败');
+      throw new BizError(ErrorCode.PARAM_INVALID, /mch_id/.test(msg)
+        ? '微信不认商户号。请确认 .env 中 WX_MCHID=1118074856 且已重启 backend'
+        : `微信下单失败: ${msg}`);
     }
     if (result.result_code !== 'SUCCESS') {
-      throw new Error(`微信下单业务失败: ${result.err_code_des}`);
+      const msg = String(result.err_code_des || result.err_code || '下单失败');
+      throw new BizError(ErrorCode.PARAM_INVALID, `微信下单失败: ${msg}`);
     }
 
     // 生成前端调起支付所需参数
     return buildPayParams(result.prepay_id);
   } catch (e) {
-    logger.error('微信统一下单异常:', e);
+    logger.error('微信统一下单异常:', e.message || e);
     throw e;
   }
 }
@@ -95,7 +115,7 @@ function buildPayParams(prepayId) {
 async function refund({ outTradeNo, outRefundNo, totalFee, refundFee, refundDesc }) {
   const params = {
     appid: config.wechat.appid,
-    mch_id: config.wechat.mchid,
+    mch_id: mchIdOrThrow(),
     nonce_str: nonceStr(),
     out_trade_no: outTradeNo,
     out_refund_no: outRefundNo,
@@ -144,7 +164,7 @@ async function refund({ outTradeNo, outRefundNo, totalFee, refundFee, refundDesc
 async function queryRefund({ outRefundNo }) {
   const params = {
     appid: config.wechat.appid,
-    mch_id: config.wechat.mchid,
+    mch_id: mchIdOrThrow(),
     nonce_str: nonceStr(),
     out_refund_no: outRefundNo
   };
@@ -179,7 +199,7 @@ async function queryRefund({ outRefundNo }) {
 async function queryOrder({ outTradeNo }) {
   const params = {
     appid: config.wechat.appid,
-    mch_id: config.wechat.mchid,
+    mch_id: mchIdOrThrow(),
     nonce_str: nonceStr(),
     out_trade_no: outTradeNo
   };

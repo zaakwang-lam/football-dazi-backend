@@ -2,6 +2,10 @@
 // 统一配置中心
 require('dotenv').config();
 
+function stripEnv(v) {
+  return String(v == null ? '' : v).replace(/^\uFEFF/, '').replace(/\r/g, '').trim().replace(/^['"]+|['"]+$/g, '');
+}
+
 module.exports = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT) || 3000,
@@ -30,9 +34,9 @@ module.exports = {
   wechat: {
     appid: process.env.WX_APPID || 'wx08b512fda8bed423',
     secret: process.env.WX_SECRET,
-    mchid: process.env.WX_MCHID,
-    payKey: process.env.WX_PAY_KEY,
-    notifyUrl: process.env.WX_NOTIFY_URL,
+    mchid: stripEnv(process.env.WX_MCHID).replace(/\s+/g, ''),
+    payKey: stripEnv(process.env.WX_PAY_KEY),
+    notifyUrl: stripEnv(process.env.WX_NOTIFY_URL),
     certPath: process.env.WX_CERT_PATH,
     keyPath: process.env.WX_KEY_PATH
   },

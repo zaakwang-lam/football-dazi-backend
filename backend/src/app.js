@@ -42,7 +42,9 @@ app.get('/health', (req, res) => res.json({
   status: 'ok',
   time: new Date().toISOString(),
   wxAppId: config.wechat.appid || '',
-  wechatReady: !!(config.wechat.appid && config.wechat.secret)
+  wechatReady: !!(config.wechat.appid && config.wechat.secret),
+  payMchOk: /^\d{8,10}$/.test(String(config.wechat.mchid || '')),
+  payKeyOk: String(config.wechat.payKey || '').length >= 16
 }));
 app.use(routes);
 app.use((req, res) => res.status(404).json(fail(404, `路径不存在: ${req.method} ${req.path}`)));
