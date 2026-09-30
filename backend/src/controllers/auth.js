@@ -583,6 +583,20 @@ async function changeAdminPassword(req, res) {
   res.json(success(null, '密码已更新，请使用新密码重新登录'));
 }
 
+
+const INITIAL_ADMIN_PASSWORD = '123456';
+
+async function resetAdminPassword(req, res) {
+  const admin = req.admin;
+  if (!admin || typeof admin.save !== 'function' || typeof admin.verifyPassword !== 'function') {
+    throw new BizError(ErrorCode.FORBIDDEN, '当前账号为微信登录，没有后台密码可重置');
+  }
+  admin.passwordHash = INITIAL_ADMIN_PASSWORD;
+  await admin.save();
+  logger.info(`[resetAdminPassword] adminId=${admin.id} username=${admin.username}`);
+  res.json(success({ username: admin.username }, '密码已重置为 123456，请重新登录'));
+}
+
 async function getMyCourts(req, res) {
   const userId = req.user.id;
   const { Court } = require('../models');
@@ -710,5 +724,5 @@ async function getMyTeams(req, res) {
 module.exports = {
   adminLogin, refreshToken, userLogin, userLoginTest, registerRole, getUserProfile, updateUserProfile,
   uploadAvatar, uploadCourtImage, getMyCourts, updateMyCourt, getMyTeams, getAdminProfile, logout,
-  getPublicMeta, searchClaimableCourts, claimCourt, changeAdminPassword
+  getPublicMeta, searchClaimableCourts, claimCourt, changeAdminPassword, resetAdminPassword
 };

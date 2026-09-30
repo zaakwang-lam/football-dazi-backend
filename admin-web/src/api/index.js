@@ -6,7 +6,8 @@ export const authApi = {
   refresh: (data) => request.post('/admin/refresh', data),
   logout: () => request.post('/admin/logout'),
   profile: () => request.get('/admin/profile'),
-  changePassword: (data) => request.put('/admin/password', data)
+  changePassword: (data) => request.put('/admin/password', data),
+  resetPassword: () => request.post('/admin/password/reset')
 };
 
 export const courtApi = {

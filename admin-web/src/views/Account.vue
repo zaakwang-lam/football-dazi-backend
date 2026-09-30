@@ -3,7 +3,7 @@
     <div class="card-header">
       <div>
         <h3>账号安全</h3>
-        <p class="tip">修改后台登录密码。改密成功后需要重新登录。</p>
+        <p class="tip">修改后台登录密码，或把当前用户名重置为初始密码 123456。成功后需要重新登录。</p>
       </div>
     </div>
 
@@ -31,7 +31,9 @@
       </el-form-item>
       <el-form-item>
         <el-button type="primary" :loading="loading" @click="onSubmit">保存新密码</el-button>
+        <el-button type="warning" plain native-type="button" :loading="resetting" @click="onReset">重置密码</el-button>
       </el-form-item>
+      <p class="tip">重置密码会把用户名「{{ authStore.adminInfo?.username || '-' }}」的密码改回初始密码 123456。</p>
     </el-form>
   </div>
 </template>
@@ -39,7 +41,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { useAuthStore } from '@/stores/auth';
 import { authApi } from '@/api';
 
@@ -47,6 +49,7 @@ const router = useRouter();
 const authStore = useAuthStore();
 const formRef = ref(null);
 const loading = ref(false);
+const resetting = ref(false);
 
 const ROLE_LABEL = {
   super_admin: '超级管理员',
@@ -79,6 +82,33 @@ const rules = {
     }
   ]
 };
+
+
+async function onReset() {
+  const username = authStore.adminInfo?.username || '当前账号';
+  try {
+    await ElMessageBox.confirm(
+      `确认将用户名「${username}」的密码重置为初始密码 123456？重置后需要重新登录。`,
+      '重置密码',
+      { confirmButtonText: '确认重置', cancelButtonText: '取消', type: 'warning' }
+    );
+  } catch {
+    return;
+  }
+  resetting.value = true;
+  try {
+    const res = await authApi.resetPassword();
+    if (res.code === 0) {
+      ElMessage.success(res.message || '密码已重置为 123456，请重新登录');
+      authStore.logout();
+      router.push('/login');
+    }
+  } catch (e) {
+    console.error(e);
+  } finally {
+    resetting.value = false;
+  }
+}
 
 async function onSubmit() {
   if (!formRef.value) return;
