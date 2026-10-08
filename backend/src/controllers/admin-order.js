@@ -120,7 +120,7 @@ async function acceptOrder(req, res) {
   if (courtIds && !courtIds.includes(Number(order.courtId))) {
     throw new BizError(ErrorCode.FORBIDDEN, '无权限操作该订单');
   }
-  if (order.status !== 'booked') {
+  if (!['booked', 'paid'].includes(order.status)) {
     throw new BizError(ErrorCode.CONFLICT, `订单状态 ${order.status}，无法接单`);
   }
   order.status = 'completed';
@@ -137,20 +137,22 @@ async function cancelOrder(req, res) {
   if (courtIds && !courtIds.includes(Number(order.courtId))) {
     throw new BizError(ErrorCode.FORBIDDEN, '无权限操作该订单');
   }
-  if (order.status !== 'booked') {
+  if (['refunded', 'canceled'].includes(order.status)) {
+    throw new BizError(ErrorCode.CONFLICT, '订单已取消');
+  }
+  const { refundPaidOrder, cancelUnpaidOrder } = require('./order');
+  const paid = order.status === 'paid' || (order.status === 'completed' && (order.transactionId || Number(order.payAmount) > 0));
+  if (paid) {
+    const result = await refundPaidOrder(order, reason || '后台退订', req.admin.id);
+    logger.info(`管理员 ${req.admin.id} 退订 ${order.orderNo}`);
+    return res.json(success({ orderNo: order.orderNo, status: order.status, refunded: true, refundNo: result.refundNo }, '已退订，退款已提交微信'));
+  }
+  if (!['pending', 'booked'].includes(order.status)) {
     throw new BizError(ErrorCode.CONFLICT, `订单状态 ${order.status}，无法取消`);
   }
-  order.status = 'canceled';
-  order.refundTime = new Date();
-  await order.save();
-  if (order.scheduleId) {
-    await CourtSchedule.update(
-      { status: 'free', orderId: null },
-      { where: { id: order.scheduleId } }
-    );
-  }
-  logger.info(`球场方 ${req.admin.id} 取消订单 ${order.orderNo}, reason: ${reason || '无'}`);
-  res.json(success({ orderNo: order.orderNo, status: order.status }));
+  await cancelUnpaidOrder(order);
+  logger.info(`管理员 ${req.admin.id} 取消订单 ${order.orderNo}, reason: ${reason || '无'}`);
+  res.json(success({ orderNo: order.orderNo, status: order.status, refunded: false }));
 }
 
 /** 运营编辑订单：状态、联系人、备注、金额 */
@@ -169,16 +171,17 @@ async function updateOrder(req, res) {
       throw new BizError(ErrorCode.PARAM_INVALID, '无效的订单状态');
     }
     const prev = order.status;
-    order.status = body.status;
-    // 改为取消/退款时释放排期
     if (['canceled', 'refunded'].includes(body.status) && !['canceled', 'refunded'].includes(prev)) {
-      if (order.scheduleId) {
-        await CourtSchedule.update(
-          { status: 'free', orderId: null },
-          { where: { id: order.scheduleId } }
-        );
+      const { refundPaidOrder, cancelUnpaidOrder } = require('./order');
+      const paid = prev === 'paid' || !!order.transactionId || Number(order.payAmount) > 0;
+      if (paid && prev !== 'pending' && prev !== 'booked') {
+        await refundPaidOrder(order, '后台退订', req.admin.id);
+      } else {
+        order.status = body.status === 'refunded' ? 'canceled' : body.status;
+        await cancelUnpaidOrder(order);
       }
-      order.refundTime = order.refundTime || new Date();
+    } else {
+      order.status = body.status;
     }
   }
   if (body.contactName !== undefined) order.contactName = String(body.contactName || '').slice(0, 32);

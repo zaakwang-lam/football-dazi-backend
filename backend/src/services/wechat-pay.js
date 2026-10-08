@@ -112,7 +112,19 @@ function buildPayParams(prepayId) {
  * @param {number} params.refundFee - 退款金额（分）
  * @param {string} params.refundDesc - 退款原因
  */
+function assertRefundCert() {
+  const cert = config.wechat.certPath;
+  const key = config.wechat.keyPath;
+  if (!cert || !key || !fs.existsSync(cert) || !fs.existsSync(key)) {
+    throw new BizError(
+      ErrorCode.PARAM_INVALID,
+      '退款证书未配置。请把商户平台的 apiclient_cert.pem、apiclient_key.pem 放到服务器，并在 .env 设置 WX_CERT_PATH、WX_KEY_PATH 后重启 backend'
+    );
+  }
+}
+
 async function refund({ outTradeNo, outRefundNo, totalFee, refundFee, refundDesc }) {
+  assertRefundCert();
   const params = {
     appid: config.wechat.appid,
     mch_id: mchIdOrThrow(),
