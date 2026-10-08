@@ -43,7 +43,7 @@ services:
     volumes:
       - ./backend/src:/app/src                  # 源码热重载（Node.js 自动重载）
       - ./backend/logs:/app/logs
-      - ./backend/certs:/app/certs
+      - ./backend/certs:/app/certs              # 宿主机 backend/certs，不是仓库根目录 certs/
       # 上传目录需持久化，并供 nginx 静态代理（若 nginx 挂载同路径）
       - ./backend/uploads:/app/uploads
     container_name: football-backend
@@ -71,6 +71,9 @@ services:
       WX_PAY_KEY: ${WX_PAY_KEY}
       WX_NOTIFY_URL: ${WX_NOTIFY_URL}
       WX_TEMPLATE_ID_BOOK: ${WX_TEMPLATE_ID_BOOK}
+      # 退款双向证书。必须是容器内路径，对应下面挂载的 ./backend/certs
+      WX_CERT_PATH: /app/certs/apiclient_cert.pem
+      WX_KEY_PATH: /app/certs/apiclient_key.pem
       # 头像/球场图公网前缀（须与小程序合法域名一致）
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://footballdazi.cn}
       # 审核测试登录：.env 设为 1 开启，过审后务必改回 0 并 recreate
