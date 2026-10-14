@@ -1,6 +1,7 @@
 <template>
   <el-container class="layout">
-    <el-aside width="220px" class="sidebar">
+    <div v-if="menuOpen" class="sidebar-mask" @click="menuOpen = false"></div>
+    <el-aside width="220px" class="sidebar" :class="{ open: menuOpen }">
       <div class="logo">
         <span class="logo-icon">⚽</span>
         <div>
@@ -16,6 +17,7 @@
         text-color="#666666"
         active-text-color="#007AFF"
         class="sidebar-menu"
+        @select="menuOpen = false"
       >
         <el-menu-item index="/ops/dashboard">
           <el-icon><DataBoard /></el-icon>
@@ -55,6 +57,9 @@
     <el-container>
       <el-header class="header">
         <div class="header-left">
+          <button type="button" class="menu-btn" aria-label="打开菜单" @click="menuOpen = true">
+            <el-icon><Menu /></el-icon>
+          </button>
           <span class="page-title">{{ $route.meta.title }}</span>
         </div>
         <div class="header-right">
@@ -89,15 +94,22 @@
 </template>
 
 <script setup>
-import { useRouter } from 'vue-router';
+import { ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { ElMessage } from 'element-plus';
 import {
-  DataBoard, User, UserFilled, Location, Document, Money, ArrowDown, SwitchButton, Picture, Lock
+  DataBoard, User, UserFilled, Location, Document, Money, ArrowDown, SwitchButton, Picture, Lock, Menu
 } from '@element-plus/icons-vue';
 
 const router = useRouter();
+const route = useRoute();
 const authStore = useAuthStore();
+const menuOpen = ref(false);
+
+watch(() => route.path, () => {
+  menuOpen.value = false;
+});
 
 function onCommand(cmd) {
   if (cmd === 'password') {
@@ -177,5 +189,47 @@ function onCommand(cmd) {
 .main {
   background: #F5F7FA;
   padding: 24px;
+}
+
+.menu-btn {
+  display: none;
+  border: none;
+  background: transparent;
+  padding: 6px;
+  margin-right: 4px;
+  font-size: 20px;
+  line-height: 1;
+  color: #1A1A1A;
+  cursor: pointer;
+}
+
+.sidebar-mask {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .menu-btn { display: inline-flex; align-items: center; }
+  .sidebar-mask {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 1000;
+  }
+  .sidebar {
+    position: fixed;
+    z-index: 1001;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    &.open { transform: translateX(0); }
+  }
+  .header {
+    padding: 0 12px;
+    .username, :deep(.el-tag) { display: none; }
+  }
+  .main { padding: 12px; }
 }
 </style>

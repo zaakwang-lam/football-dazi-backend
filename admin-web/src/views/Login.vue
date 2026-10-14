@@ -144,4 +144,11 @@ async function onSubmit() {
     margin: 4px 0;
   }
 }
+
+@media (max-width: 768px) {
+  .login-card {
+    width: calc(100% - 32px);
+    padding: 32px 20px;
+  }
+}
 </style>

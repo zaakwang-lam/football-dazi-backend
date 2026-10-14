@@ -69,3 +69,64 @@ body {
   &.canceled { background: #F5F7FA; color: $text-tertiary; }
   &.completed { background: #E8F8EE; color: $success; }
 }
+
+// 仅手机：电脑宽度不进这条，网页端布局不变
+@media (max-width: 768px) {
+  .page-card {
+    padding: 16px;
+  }
+
+  .card-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px;
+  }
+
+  .card-header > div {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .card-header .el-input,
+  .toolbar .el-input,
+  .toolbar .el-select {
+    width: 100% !important;
+  }
+
+  .toolbar,
+  .toolbar-actions {
+    flex-wrap: wrap;
+  }
+
+  .el-col-4,
+  .el-col-6,
+  .el-col-8,
+  .el-col-12,
+  .el-col-16 {
+    max-width: 100%;
+    flex: 0 0 100%;
+  }
+
+  .el-dialog {
+    width: calc(100vw - 24px) !important;
+  }
+
+  .el-dialog__body {
+    max-height: 70vh;
+    overflow: auto;
+  }
+
+  .el-table {
+    overflow-x: auto;
+  }
+
+  .el-pagination {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .el-pagination__sizes,
+  .el-pagination__jump {
+    display: none !important;
+  }
+}
