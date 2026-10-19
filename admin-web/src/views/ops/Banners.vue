@@ -16,7 +16,7 @@
       :closable="false"
       show-icon
       style="margin-bottom: 16px;"
-      title="建议尺寸：750 × 360 像素（宽 × 高），JPG/PNG，单张 ≤ 2MB，最多 5 张。上传后小程序首页置顶左右滑动展示。"
+      title="按图片原始比例完整展示，不再裁切。JPG/PNG，单张 ≤ 2MB，最多 5 张。上传后小程序首页置顶左右滑动。"
     />
 
     <el-row :gutter="16" v-loading="loading">
@@ -38,7 +38,7 @@
         </div>
       </el-col>
       <el-col :span="24" v-if="!loading && list.length === 0">
-        <el-empty description="暂无轮播图，请上传（建议 750×360）" />
+        <el-empty description="暂无轮播图，请上传" />
       </el-col>
     </el-row>
   </div>
@@ -51,7 +51,7 @@ import { bannerApi } from '@/api';
 
 const list = ref([]);
 const max = ref(5);
-const tip = ref('建议尺寸 750×360 像素');
+const tip = ref('按原始比例完整展示，不裁切');
 const loading = ref(false);
 const uploading = ref(false);
 const fileInput = ref(null);
@@ -169,8 +169,9 @@ onMounted(loadList);
 }
 .banner-img {
   width: 100%;
-  height: 160px;
-  object-fit: cover;
+  height: auto;
+  max-height: 420px;
+  object-fit: contain;
   display: block;
   background: #f5f5f5;
 }
