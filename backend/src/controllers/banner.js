@@ -39,7 +39,7 @@ async function adminList(req, res) {
       createdAt: b.createdAt
     })),
     max: MAX_BANNERS,
-    tip: '建议尺寸 750×360 像素（宽×高），JPG/PNG，单张不超过 2MB，最多 5 张。超出尺寸自动缩小放进展示框，不裁切'
+    tip: '建议尺寸 750×360 像素（宽×高），JPG/PNG，单张不超过 2MB，最多 5 张。按原始比例完整展示，不裁切'
   }));
 }
 

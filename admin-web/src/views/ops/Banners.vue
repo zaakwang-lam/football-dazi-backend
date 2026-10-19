@@ -16,7 +16,7 @@
       :closable="false"
       show-icon
       style="margin-bottom: 16px;"
-      title="建议尺寸：750 × 360 像素（宽 × 高），JPG/PNG，单张 ≤ 2MB，最多 5 张。超出该尺寸会自动缩小放进展示框，不裁切。上传后小程序首页置顶左右滑动展示。"
+      title="建议尺寸：750 × 360 像素（宽 × 高），JPG/PNG，单张 ≤ 2MB，最多 5 张。按原始比例完整展示，不裁切。上传后小程序首页置顶左右滑动。"
     />
 
     <el-row :gutter="16" v-loading="loading">
@@ -51,7 +51,7 @@ import { bannerApi } from '@/api';
 
 const list = ref([]);
 const max = ref(5);
-const tip = ref('建议尺寸 750×360 像素，超出自动缩小，不裁切');
+const tip = ref('建议尺寸 750×360 像素，完整展示不裁切');
 const loading = ref(false);
 const uploading = ref(false);
 const fileInput = ref(null);
@@ -169,7 +169,8 @@ onMounted(loadList);
 }
 .banner-img {
   width: 100%;
-  height: 160px;
+  height: auto;
+  max-height: 420px;
   object-fit: contain;
   display: block;
   background: #f5f5f5;
