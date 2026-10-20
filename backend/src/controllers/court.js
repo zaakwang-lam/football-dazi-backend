@@ -499,6 +499,25 @@ async function updateFreeSlot(req, res) {
   }, '已更新空闲时段'));
 }
 
+async function deleteFreeSlot(req, res) {
+  const courtId = Number(req.params.id);
+  const slotId = Number(req.params.slotId);
+  const userId = req.user.id;
+  if (!slotId) throw new BizError(ErrorCode.PARAM_INVALID, '缺少时段 ID');
+  const court = await Court.findByPk(courtId);
+  if (!court) throw new BizError(ErrorCode.NOT_FOUND, '场地不存在');
+  if (Number(court.ownerId) !== Number(userId)) {
+    throw new BizError(ErrorCode.FORBIDDEN, '仅场地所有者可删除空闲信息');
+  }
+  const slot = await CourtSchedule.findOne({ where: { id: slotId, courtId } });
+  if (!slot) throw new BizError(ErrorCode.NOT_FOUND, '空闲时段不存在');
+  if (slot.status === 'booked' || slot.orderId) {
+    throw new BizError(ErrorCode.CONFLICT, '该时段已被预订，无法删除');
+  }
+  await slot.destroy();
+  res.json(success({ id: slotId }, '已删除空闲时段'));
+}
+
 async function getFreeSlots(req, res) {
   const { id } = req.params;
   const { dateFrom, dateTo } = req.query;
@@ -662,7 +681,7 @@ async function adminImportCourts(req, res) {
 }
 
 module.exports = {
-  getNearbyCourts, getCourtRegions, getCourtDetail, getCourtSchedule, getFreeSlots, publishFreeSlots, updateFreeSlot,
+  getNearbyCourts, getCourtRegions, getCourtDetail, getCourtSchedule, getFreeSlots, publishFreeSlots, updateFreeSlot, deleteFreeSlot,
   evaluateCourt,
   adminListCourts, adminGetCourtDetail, adminCreateCourt, adminUpdateCourt,
   adminDeleteCourt, adminBatchDeleteCourts, auditCourt, adminImportCourts, adminImportTemplate
