@@ -438,6 +438,67 @@ async function publishFreeSlots(req, res) {
   }, `成功发布 ${records.length} 个空闲时段`));
 }
 
+async function updateFreeSlot(req, res) {
+  const courtId = Number(req.params.id);
+  const slotId = Number(req.params.slotId);
+  const userId = req.user.id;
+  if (!slotId) throw new BizError(ErrorCode.PARAM_INVALID, '缺少时段 ID');
+  const court = await Court.findByPk(courtId);
+  if (!court) throw new BizError(ErrorCode.NOT_FOUND, '场地不存在');
+  if (Number(court.ownerId) !== Number(userId)) {
+    throw new BizError(ErrorCode.FORBIDDEN, '仅场地所有者可修改空闲信息');
+  }
+  const slot = await CourtSchedule.findOne({ where: { id: slotId, courtId } });
+  if (!slot) throw new BizError(ErrorCode.NOT_FOUND, '空闲时段不存在');
+  if (slot.status === 'booked') throw new BizError(ErrorCode.CONFLICT, '该时段已被预订，无法修改');
+  if (slot.status === 'closed') throw new BizError(ErrorCode.CONFLICT, '该时段已关闭，无法修改');
+
+  const body = req.body || {};
+  const date = String(body.date || '').trim();
+  const timeSlot = String(body.timeSlot || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new BizError(ErrorCode.PARAM_INVALID, '日期格式不正确');
+  if (!/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(timeSlot) || timeSlot.length > 16) {
+    throw new BizError(ErrorCode.PARAM_INVALID, '时段格式不正确');
+  }
+  const [start, end] = timeSlot.split('-');
+  if (start >= end) throw new BizError(ErrorCode.PARAM_INVALID, '结束时间需晚于开始时间');
+  const ALLOWED_PITCH = ['5人场', '7人场', '11人场'];
+  const pitchType = ALLOWED_PITCH.includes(body.pitchType) ? body.pitchType : (slot.pitchType || '5人场');
+  if (body.price === undefined || body.price === null || body.price === '') {
+    throw new BizError(ErrorCode.PARAM_INVALID, '请填写场次费用');
+  }
+  const price = Number(body.price);
+  if (Number.isNaN(price) || price < 0) throw new BizError(ErrorCode.PARAM_INVALID, '场次费用需为不小于 0 的数字');
+
+  const dupWhere = {
+    courtId,
+    date,
+    timeSlot,
+    id: { [Op.ne]: slot.id }
+  };
+  if (pitchType === '5人场') {
+    dupWhere[Op.or] = [{ pitchType: '5人场' }, { pitchType: null }, { pitchType: '' }];
+  } else {
+    dupWhere.pitchType = pitchType;
+  }
+  const dup = await CourtSchedule.findOne({ where: dupWhere });
+  if (dup) throw new BizError(ErrorCode.CONFLICT, '同一球场已有相同日期、时段和人制');
+
+  slot.date = date;
+  slot.timeSlot = timeSlot;
+  slot.pitchType = pitchType;
+  slot.price = price;
+  await slot.save();
+  res.json(success({
+    id: slot.id,
+    date: slot.date,
+    timeSlot: slot.timeSlot,
+    pitchType: slot.pitchType || '5人场',
+    price: parseFloat(slot.price),
+    status: slot.status
+  }, '已更新空闲时段'));
+}
+
 async function getFreeSlots(req, res) {
   const { id } = req.params;
   const { dateFrom, dateTo } = req.query;
@@ -601,7 +662,7 @@ async function adminImportCourts(req, res) {
 }
 
 module.exports = {
-  getNearbyCourts, getCourtRegions, getCourtDetail, getCourtSchedule, getFreeSlots, publishFreeSlots,
+  getNearbyCourts, getCourtRegions, getCourtDetail, getCourtSchedule, getFreeSlots, publishFreeSlots, updateFreeSlot,
   evaluateCourt,
   adminListCourts, adminGetCourtDetail, adminCreateCourt, adminUpdateCourt,
   adminDeleteCourt, adminBatchDeleteCourts, auditCourt, adminImportCourts, adminImportTemplate

@@ -32,6 +32,7 @@ router.get('/api/v1/courts/:id', courtCtrl.getCourtDetail);
 router.get('/api/v1/courts/:id/schedule', courtCtrl.getCourtSchedule);
 router.get('/api/v1/courts/:id/free-slots', courtCtrl.getFreeSlots);
 router.post('/api/v1/courts/:id/free-slots', userAuth(), courtCtrl.publishFreeSlots);
+router.put('/api/v1/courts/:id/free-slots/:slotId', userAuth(), courtCtrl.updateFreeSlot);
 router.post('/api/v1/courts/:id/evaluate', userAuth(), courtCtrl.evaluateCourt);
 router.get('/api/v1/banners', bannerCtrl.listPublic);
 router.get('/api/v1/lfg/list', lfgCtrl.getLfgList);
