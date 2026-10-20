@@ -60,6 +60,7 @@ router.get('/api/user/courts/claimable', userAuth(), authCtrl.searchClaimableCou
 router.post('/api/user/courts/:id/claim', userAuth(), authCtrl.claimCourt);
 router.get('/api/user/me/courts', userAuth(), authCtrl.getMyCourts);
 router.put('/api/user/me/courts/:id', userAuth(), authCtrl.updateMyCourt);
+router.post('/api/user/me/courts/:id/unbind', userAuth(), authCtrl.unbindCourt);
 router.post('/api/user/me/courts/:id/image', userAuth(), authCtrl.uploadCourtImage);
 router.get('/api/user/me/teams', userAuth(), authCtrl.getMyTeams);
 router.get('/api/user/me/lfg-posts', userAuth(), lfgCtrl.getMyLfgPosts);

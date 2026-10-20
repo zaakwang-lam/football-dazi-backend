@@ -597,6 +597,57 @@ async function resetAdminPassword(req, res) {
   res.json(success({ username: admin.username }, '密码已重置为 123456，请重新登录'));
 }
 
+async function unbindCourt(req, res) {
+  const userId = Number(req.user.id);
+  const courtId = Number(req.params.id);
+  if (!courtId) throw new BizError(ErrorCode.PARAM_INVALID, '缺少球场 ID');
+  const { Court, User } = require('../models');
+  const { Op } = require('sequelize');
+  const { sequelize } = require('../utils/db');
+  const t = await sequelize.transaction();
+  try {
+    const user = await User.findByPk(userId, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!user) throw new BizError(ErrorCode.NOT_FOUND, '用户不存在');
+    const court = await Court.findByPk(courtId, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!court || Number(court.status) === -1) throw new BizError(ErrorCode.NOT_FOUND, '球场不存在');
+    if (Number(court.ownerId) !== userId) throw new BizError(ErrorCode.FORBIDDEN, '只能解绑自己认领的球场');
+
+    court.ownerId = null;
+    await court.save({ transaction: t });
+
+    const rest = await Court.count({
+      where: { ownerId: userId, id: { [Op.ne]: courtId }, status: { [Op.ne]: -1 } },
+      transaction: t
+    });
+    if (rest === 0) {
+      const roles = (Array.isArray(user.roles) ? user.roles : []).filter((r) => r && r !== 'court');
+      user.roles = roles.length ? [...new Set(roles)] : ['user'];
+      if (!user.roles.includes('user')) user.roles.unshift('user');
+      if (user.role === 'court') user.role = 'user';
+      user.courtId = null;
+    } else if (Number(user.courtId) === courtId) {
+      const another = await Court.findOne({
+        where: { ownerId: userId, status: { [Op.ne]: -1 } },
+        transaction: t
+      });
+      user.courtId = another ? another.id : null;
+    }
+    await user.save({ transaction: t });
+    await t.commit();
+    logger.info(`[unbindCourt] userId=${userId} courtId=${courtId}`);
+    res.json(success({
+      courtId,
+      unbound: true,
+      role: user.role,
+      roles: user.roles,
+      courtIdLeft: user.courtId || null
+    }, '已解绑，其他用户可以认领'));
+  } catch (err) {
+    await t.rollback();
+    throw err;
+  }
+}
+
 async function getMyCourts(req, res) {
   const userId = req.user.id;
   const { Court } = require('../models');
@@ -724,5 +775,5 @@ async function getMyTeams(req, res) {
 module.exports = {
   adminLogin, refreshToken, userLogin, userLoginTest, registerRole, getUserProfile, updateUserProfile,
   uploadAvatar, uploadCourtImage, getMyCourts, updateMyCourt, getMyTeams, getAdminProfile, logout,
-  getPublicMeta, searchClaimableCourts, claimCourt, changeAdminPassword, resetAdminPassword
+  getPublicMeta, searchClaimableCourts, claimCourt, unbindCourt, changeAdminPassword, resetAdminPassword
 };
