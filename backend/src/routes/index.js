@@ -12,6 +12,7 @@ const teamCtrl = require('../controllers/team');
 const dashCtrl = require('../controllers/dashboard');
 const courtDashCtrl = require('../controllers/court-dashboard');
 const bannerCtrl = require('../controllers/banner');
+const financeCtrl = require('../controllers/finance');
 
 router.post('/api/admin/login', authCtrl.adminLogin);
 router.post('/api/admin/refresh', authCtrl.refreshToken);
@@ -100,6 +101,9 @@ router.put('/api/admin/orders/:id', adminAuth(), adminOrderCtrl.updateOrder);
 router.delete('/api/admin/orders/:id', adminAuth(), adminOrderCtrl.deleteOrder);
 router.post('/api/admin/orders/:id/accept', adminAuth(), adminOrderCtrl.acceptOrder);
 router.post('/api/admin/orders/:id/cancel', adminAuth(), adminOrderCtrl.cancelOrder);
+router.get('/api/admin/finance/summary', adminAuth(), financeCtrl.summary);
+router.get('/api/admin/finance/flows', adminAuth(), financeCtrl.flows);
+router.get('/api/admin/finance/refunds', adminAuth(), financeCtrl.refunds);
 router.get('/api/admin/users', adminAuth(), adminUsersCtrl.listUsers);
 router.get('/api/admin/users/:id', adminAuth(), adminUsersCtrl.getUserDetail);
 router.put('/api/admin/users/:id/status', adminAuth(['super_admin', 'ops']), adminUsersCtrl.updateUserStatus);

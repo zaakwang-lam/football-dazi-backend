@@ -49,6 +49,12 @@ export const userApi = {
   resetRole: (id) => request.post(`/admin/users/${id}/reset-role`)
 };
 
+export const financeApi = {
+  summary: (params) => request.get('/admin/finance/summary', { params }),
+  flows: (params) => request.get('/admin/finance/flows', { params }),
+  refunds: (params) => request.get('/admin/finance/refunds', { params })
+};
+
 export const orderApi = {
   list: (params) => request.get('/admin/orders', { params }),
   detail: (id) => request.get(`/admin/orders/${id}`),
