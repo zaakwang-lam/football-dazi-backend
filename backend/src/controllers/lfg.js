@@ -24,7 +24,14 @@ async function syncJoinedCount(post, t) {
 async function getLfgList(req, res) {
   const { type, page = 1, pageSize = 10 } = req.query;
 
-  const where = { status: { [Op.in]: ['open', 'full'] } };
+  // 2026-10-23：列表改为「按比赛时间顺序展示」（最近的球局在前），不再按发布时间倒序。
+  // 同时过滤掉已开赛的场次，避免首页顶部出现已经开踢的球局。
+  // 旧行为：order: [['created_at','DESC']] + 不过滤时间 → 最新发布的挤掉最近的场次，
+  //         且当天早场在 0 点 auto-expire 前仍会露在列表里。
+  const where = {
+    status: { [Op.in]: ['open', 'full'] },
+    playTime: { [Op.gte]: new Date() }
+  };
   if (type && type !== 'all') where.type = type;
 
   const { rows, count } = await LfgPost.findAndCountAll({
@@ -32,7 +39,7 @@ async function getLfgList(req, res) {
     include: [
       { model: User, as: 'publisher', attributes: ['id', 'nickname', 'avatarUrl'], required: false }
     ],
-    order: [['created_at', 'DESC']],
+    order: [['playTime', 'ASC'], ['id', 'ASC']],
     limit: Number(pageSize),
     offset: (Number(page) - 1) * Number(pageSize)
   });
