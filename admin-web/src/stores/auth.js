@@ -24,6 +24,17 @@ export const useAuthStore = defineStore('auth', () => {
     return res;
   }
 
+  function setTokens(accessToken, nextRefresh) {
+    if (accessToken) {
+      token.value = accessToken;
+      localStorage.setItem('admin_token', accessToken);
+    }
+    if (nextRefresh) {
+      refreshToken.value = nextRefresh;
+      localStorage.setItem('admin_refresh_token', nextRefresh);
+    }
+  }
+
   function logout() {
     token.value = '';
     refreshToken.value = '';
@@ -40,6 +51,7 @@ export const useAuthStore = defineStore('auth', () => {
     isLoggedIn,
     role,
     login,
+    setTokens,
     logout
   };
 });

@@ -6,7 +6,7 @@ const { Admin } = require('../models');
 function authMiddleware(required = true) {
   return async (req, res, next) => {
     const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    const token = (authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '').trim().replace(/^"|"$/g, '');
     if (!token) {
       if (!required) { req.user = null; return next(); }
       return res.status(401).json(fail(ErrorCode.UNAUTHORIZED, '未登录'));
@@ -26,7 +26,7 @@ function adminAuth(requiredRoles = []) {
   return async (req, res, next) => {
     try {
       const authHeader = req.headers.authorization || '';
-      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      const token = (authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '').trim().replace(/^"|"$/g, '');
       if (!token) throw new BizError(ErrorCode.UNAUTHORIZED, '请先登录');
       const payload = verifyAccessToken(token);
       if (!payload) throw new BizError(ErrorCode.UNAUTHORIZED, 'Token 无效或已过期');

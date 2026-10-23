@@ -7,7 +7,8 @@ function errorHandler(err, req, res, next) {
   // 业务异常
   if (err.isBizError) {
     logger.warn(`业务异常 [${err.code}]: ${err.message} - ${req.method} ${req.path}`);
-    return res.status(err.code >= 500 ? 500 : 400).json(fail(err.code, err.message));
+    const status = err.code === 401 ? 401 : err.code === 403 ? 403 : err.code === 404 ? 404 : (err.code >= 500 ? 500 : 400);
+    return res.status(status).json(fail(err.code, err.message));
   }
 
   // Sequelize 验证错误

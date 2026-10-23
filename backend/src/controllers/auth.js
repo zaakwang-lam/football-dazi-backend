@@ -242,7 +242,11 @@ async function refreshToken(req, res) {
   if (!payload) throw new BizError(ErrorCode.UNAUTHORIZED, 'refreshToken 无效或已过期');
   const admin = await Admin.findByPk(payload.id);
   if (!admin || admin.status !== 1) throw new BizError(ErrorCode.FORBIDDEN, '账号已被禁用');
-  res.json(success({ accessToken: generateAccessToken({ id: admin.id, username: admin.username, role: admin.role, courtId: admin.courtId }) }));
+  const next = { id: admin.id, username: admin.username, role: admin.role, courtId: admin.courtId };
+  res.json(success({
+    accessToken: generateAccessToken(next),
+    refreshToken: generateRefreshToken(next)
+  }));
 }
 
 /**
