@@ -4,6 +4,23 @@ const { success, fail, BizError, ErrorCode } = require('../utils/response');
 const { Op } = require('sequelize');
 const { parseTableBuffer, mapRows, buildCsvTemplate, buildExcelXmlTemplate, parseCoord, parseHours } = require('../utils/excel-import');
 const { parseProvinceCity, matchRegion } = require('../utils/region-parse');
+const { applyPendingFloor, assignFloor, slotMoney } = require('../utils/floor-price');
+
+function courtProfile(c) {
+  return {
+    entityType: c.entityType || '',
+    creditCode: c.creditCode || '',
+    taxpayerType: c.taxpayerType || '',
+    invoiceTitle: c.invoiceTitle || '',
+    invoiceTaxNo: c.invoiceTaxNo || '',
+    invoiceAddress: c.invoiceAddress || '',
+    invoiceBank: c.invoiceBank || '',
+    invoicePhone: c.invoicePhone || '',
+    settleAccountName: c.settleAccountName || '',
+    settleBankName: c.settleBankName || '',
+    settleBankAccount: c.settleBankAccount || ''
+  };
+}
 
 function calcDistance(lat1, lng1, lat2, lng2) {
   if (!lat1 || !lng1 || !lat2 || !lng2) return null;
@@ -229,7 +246,8 @@ async function adminListCourts(req, res) {
       openTime: c.openTime, closeTime: c.closeTime,
       hoursText: formatHours(c.openTime, c.closeTime),
       status: c.status, createdAt: c.createdAt,
-      images: c.images || [], coverUrl: pickCover(c.images)
+      images: c.images || [], coverUrl: pickCover(c.images),
+      ...courtProfile(c)
     })),
     total: count
   }));
@@ -279,7 +297,9 @@ async function adminUpdateCourt(req, res) {
     throw new BizError(ErrorCode.FORBIDDEN, '无权限编辑该场地');
   }
   const allowed = ['name', 'type', 'types', 'address', 'longitude', 'latitude', 'phone', 'contactName', 'price',
-    'openTime', 'closeTime', 'images', 'tags', 'description', 'status', 'district'];
+    'openTime', 'closeTime', 'images', 'tags', 'description', 'status', 'district',
+    'entityType', 'creditCode', 'taxpayerType', 'invoiceTitle', 'invoiceTaxNo', 'invoiceAddress',
+    'invoiceBank', 'invoicePhone', 'settleAccountName', 'settleBankName', 'settleBankAccount'];
   const updates = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -390,6 +410,7 @@ async function publishFreeSlots(req, res) {
   }
   const ALLOWED_PITCH = ['5人场', '7人场', '11人场'];
   const records = [];
+  let floorPending = false;
   for (const slot of slots) {
     if (!slot.date || !slot.timeSlot) continue;
     const pitchType = ALLOWED_PITCH.includes(slot.pitchType) ? slot.pitchType : '5人场';
@@ -400,6 +421,7 @@ async function publishFreeSlots(req, res) {
     if (Number.isNaN(price) || price < 0) {
       throw new BizError(ErrorCode.PARAM_INVALID, '场次费用需为不小于 0 的数字');
     }
+    let floorChange = { mode: 'now' };
     const existingWhere = {
       courtId: id,
       date: slot.date,
@@ -416,26 +438,34 @@ async function publishFreeSlots(req, res) {
     }
     const existing = await CourtSchedule.findOne({ where: existingWhere });
     if (existing) {
+      await applyPendingFloor(existing);
       existing.price = price;
+      Object.assign(floorChange, assignFloor(existing, slot.floorPrice, price));
       existing.pitchType = pitchType;
       existing.status = existing.status === 'booked' ? 'booked' : 'free';
       await existing.save();
       records.push(existing);
+      if (floorChange.mode === 'pending') floorPending = true;
       continue;
     }
     const rec = await CourtSchedule.create({
       courtId: id, date: slot.date, timeSlot: slot.timeSlot,
       pitchType, price, status: 'free'
     });
+    Object.assign(floorChange, assignFloor(rec, slot.floorPrice, price));
+    await rec.save();
     records.push(rec);
+    if (floorChange.mode === 'pending') floorPending = true;
   }
   res.json(success({
     published: records.length,
     slots: records.map(r => ({
       id: r.id, date: r.date, timeSlot: r.timeSlot, pitchType: r.pitchType || '5人场',
-      price: parseFloat(r.price), status: r.status
+      ...slotMoney(r), status: r.status
     }))
-  }, `成功发布 ${records.length} 个空闲时段`));
+  }, floorPending
+    ? `成功发布 ${records.length} 个空闲时段，新合作底价将于 7 日后生效`
+    : `成功发布 ${records.length} 个空闲时段`));
 }
 
 async function updateFreeSlot(req, res) {
@@ -488,15 +518,17 @@ async function updateFreeSlot(req, res) {
   slot.timeSlot = timeSlot;
   slot.pitchType = pitchType;
   slot.price = price;
+  await applyPendingFloor(slot);
+  const floorChange = assignFloor(slot, body.floorPrice, price);
   await slot.save();
   res.json(success({
     id: slot.id,
     date: slot.date,
     timeSlot: slot.timeSlot,
     pitchType: slot.pitchType || '5人场',
-    price: parseFloat(slot.price),
+    ...slotMoney(slot),
     status: slot.status
-  }, '已更新空闲时段'));
+  }, floorChange.mode === 'pending' ? '场次已更新，新合作底价将于 7 日后生效' : '已更新空闲时段'));
 }
 
 async function deleteFreeSlot(req, res) {
@@ -528,11 +560,12 @@ async function getFreeSlots(req, res) {
     where: { courtId: id, date: { [Op.between]: [from, to] }, status: 'free' },
     order: [['date', 'ASC'], ['timeSlot', 'ASC']]
   });
+  for (const slot of slots) await applyPendingFloor(slot);
   res.json(success({
     list: slots.map(s => ({
       id: s.id, date: s.date, timeSlot: s.timeSlot,
       pitchType: s.pitchType || '5人场',
-      price: parseFloat(s.price), status: s.status
+      ...slotMoney(s), status: s.status
     })),
     dateFrom: from, dateTo: to
   }));

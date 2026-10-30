@@ -15,6 +15,8 @@ const requestLogger = require('./middlewares/logger');
 const errorHandler = require('./middlewares/error');
 const routes = require('./routes');
 const { ensureAaPaymentTables } = require('./utils/ensure-aa-tables');
+const { ensureCityManagerSchema } = require('./utils/ensure-city-manager');
+const { ensureCooperationSchema } = require('./utils/ensure-cooperation');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -176,6 +178,16 @@ async function start() {
       await ensureAaPaymentTables();
     } catch (err) {
       logger.error(`⚠️ AA 表启动创建失败，将在首次 AA 请求时重试: ${err.message}`);
+    }
+    try {
+      await ensureCityManagerSchema();
+    } catch (err) {
+      logger.error(`⚠️ 城市经理表启动创建失败: ${err.message}`);
+    }
+    try {
+      await ensureCooperationSchema();
+    } catch (err) {
+      logger.error(`⚠️ 合作字段启动创建失败: ${err.message}`);
     }
     app.listen(config.port, () => {
       logger.info('🚀 「爱拍球」后端服务启动成功');

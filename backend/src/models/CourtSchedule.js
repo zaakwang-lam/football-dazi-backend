@@ -13,6 +13,9 @@ module.exports = (sequelize) => {
       defaultValue: 'free'
     },
     price: { type: DataTypes.DECIMAL(10, 2) },
+    floorPrice: { type: DataTypes.DECIMAL(10, 2), field: 'floor_price' },
+    pendingFloorPrice: { type: DataTypes.DECIMAL(10, 2), field: 'pending_floor_price' },
+    floorEffectiveAt: { type: DataTypes.DATE, field: 'floor_effective_at' },
     orderId: { type: DataTypes.INTEGER, field: 'order_id' }
   }, {
     tableName: 'court_schedules'

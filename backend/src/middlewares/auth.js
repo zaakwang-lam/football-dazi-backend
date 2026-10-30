@@ -22,6 +22,17 @@ function authMiddleware(required = true) {
   };
 }
 
+function cityManagerAllowed(req, requiredRoles) {
+  if (requiredRoles.includes('city_manager')) return true;
+  const path = String(req.originalUrl || req.path || '').split('?')[0];
+  return [
+    '/api/admin/profile',
+    '/api/admin/password',
+    '/api/admin/password/reset',
+    '/api/admin/logout'
+  ].includes(path) || path.startsWith('/api/admin/city-managers/me');
+}
+
 function adminAuth(requiredRoles = []) {
   return async (req, res, next) => {
     try {
@@ -33,6 +44,9 @@ function adminAuth(requiredRoles = []) {
 
       let admin = await Admin.findByPk(payload.id);
       if (admin && admin.status === 1) {
+        if (admin.role === 'city_manager' && !cityManagerAllowed(req, requiredRoles)) {
+          throw new BizError(ErrorCode.FORBIDDEN, '城市经理无权访问该功能');
+        }
         if (requiredRoles.length > 0 && !requiredRoles.includes(admin.role)) {
           throw new BizError(ErrorCode.FORBIDDEN, '权限不足');
         }

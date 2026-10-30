@@ -73,7 +73,8 @@ async function onSubmit() {
       const res = await authStore.login(form);
       if (res.code === 0) {
         ElMessage.success('登录成功');
-        const target = res.data.admin.role === 'court_admin' ? '/dashboard' : '/ops/dashboard';
+        const role = res.data.admin.role;
+        const target = role === 'court_admin' ? '/dashboard' : role === 'city_manager' ? '/cm' : '/ops/dashboard';
         router.push(target);
       }
     } catch (e) {

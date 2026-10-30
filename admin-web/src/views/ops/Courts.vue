@@ -99,6 +99,9 @@
         <el-descriptions-item label="地址" :span="2">{{ currentCourt.address }}</el-descriptions-item>
         <el-descriptions-item label="营业时间">{{ currentCourt.hoursText || '无' }}</el-descriptions-item>
         <el-descriptions-item label="座标">{{ currentCourt.coordText || '无' }}</el-descriptions-item>
+        <el-descriptions-item label="主体">{{ currentCourt.entityType || '未填' }}</el-descriptions-item>
+        <el-descriptions-item label="证件号">{{ currentCourt.creditCode || '未填' }}</el-descriptions-item>
+        <el-descriptions-item label="收款账户" :span="2">{{ currentCourt.settleAccountName || '未填' }} {{ currentCourt.settleBankAccount || '' }}</el-descriptions-item>
         <el-descriptions-item label="描述" :span="2">
           <pre style="margin: 0; white-space: pre-wrap;">{{ currentCourt.description || '无' }}</pre>
         </el-descriptions-item>
@@ -106,7 +109,7 @@
     </el-dialog>
 
     <!-- 编辑弹窗 -->
-    <el-dialog v-model="editDialog" title="编辑场地信息" width="560px" destroy-on-close>
+    <el-dialog v-model="editDialog" title="编辑场地信息" width="640px" destroy-on-close>
       <el-form :model="editForm" label-width="90px">
         <el-form-item label="名称" required>
           <el-input v-model="editForm.name" maxlength="64" />
@@ -130,6 +133,49 @@
         </el-form-item>
         <el-form-item label="单价">
           <el-input-number v-model="editForm.price" :min="0" :max="99999" style="width: 100%;" />
+        </el-form-item>
+        <el-divider content-position="left">合作主体与收款</el-divider>
+        <el-form-item label="主体类型">
+          <el-select v-model="editForm.entityType" clearable style="width: 100%;">
+            <el-option label="企业" value="企业" />
+            <el-option label="个体工商户" value="个体工商户" />
+            <el-option label="自然人" value="自然人" />
+            <el-option label="其他" value="其他" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="证件号">
+          <el-input v-model="editForm.creditCode" placeholder="统一社会信用代码或身份证号" />
+        </el-form-item>
+        <el-form-item label="纳税人">
+          <el-select v-model="editForm.taxpayerType" clearable style="width: 100%;">
+            <el-option label="一般纳税人" value="一般纳税人" />
+            <el-option label="小规模纳税人" value="小规模纳税人" />
+            <el-option label="自然人" value="自然人" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="开票名称">
+          <el-input v-model="editForm.invoiceTitle" />
+        </el-form-item>
+        <el-form-item label="税号">
+          <el-input v-model="editForm.invoiceTaxNo" />
+        </el-form-item>
+        <el-form-item label="开票地址">
+          <el-input v-model="editForm.invoiceAddress" />
+        </el-form-item>
+        <el-form-item label="开票银行">
+          <el-input v-model="editForm.invoiceBank" placeholder="开户行及账号" />
+        </el-form-item>
+        <el-form-item label="开票电话">
+          <el-input v-model="editForm.invoicePhone" />
+        </el-form-item>
+        <el-form-item label="收款户名">
+          <el-input v-model="editForm.settleAccountName" />
+        </el-form-item>
+        <el-form-item label="收款银行">
+          <el-input v-model="editForm.settleBankName" />
+        </el-form-item>
+        <el-form-item label="收款账号">
+          <el-input v-model="editForm.settleBankAccount" />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="editForm.status" style="width: 100%;">
@@ -325,7 +371,18 @@ function onEdit(row) {
     contactName: row.contactName || '',
     price: Number(row.price) || 0,
     status: row.status,
-    description: row.description || ''
+    description: row.description || '',
+    entityType: row.entityType || '',
+    creditCode: row.creditCode || '',
+    taxpayerType: row.taxpayerType || '',
+    invoiceTitle: row.invoiceTitle || '',
+    invoiceTaxNo: row.invoiceTaxNo || '',
+    invoiceAddress: row.invoiceAddress || '',
+    invoiceBank: row.invoiceBank || '',
+    invoicePhone: row.invoicePhone || '',
+    settleAccountName: row.settleAccountName || '',
+    settleBankName: row.settleBankName || '',
+    settleBankAccount: row.settleBankAccount || ''
   };
   editDialog.value = true;
 }
@@ -347,7 +404,18 @@ async function confirmEdit() {
       contactName: (f.contactName || '').trim(),
       price: Number(f.price) || 0,
       status: Number(f.status),
-      description: (f.description || '').trim()
+      description: (f.description || '').trim(),
+      entityType: f.entityType || '',
+      creditCode: (f.creditCode || '').trim(),
+      taxpayerType: f.taxpayerType || '',
+      invoiceTitle: (f.invoiceTitle || '').trim(),
+      invoiceTaxNo: (f.invoiceTaxNo || '').trim(),
+      invoiceAddress: (f.invoiceAddress || '').trim(),
+      invoiceBank: (f.invoiceBank || '').trim(),
+      invoicePhone: (f.invoicePhone || '').trim(),
+      settleAccountName: (f.settleAccountName || '').trim(),
+      settleBankName: (f.settleBankName || '').trim(),
+      settleBankAccount: (f.settleBankAccount || '').trim()
     });
     if (res.code === 0) {
       ElMessage.success('已保存');

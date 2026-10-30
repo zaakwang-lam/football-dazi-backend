@@ -8,12 +8,16 @@ module.exports = (sequelize) => {
     username: { type: DataTypes.STRING(32), unique: true, allowNull: false },
     passwordHash: { type: DataTypes.STRING(255), field: 'password_hash' },
     role: {
-      type: DataTypes.ENUM('super_admin', 'court_admin', 'finance', 'ops'),
+      type: DataTypes.ENUM('super_admin', 'court_admin', 'finance', 'ops', 'city_manager'),
       defaultValue: 'court_admin'
     },
     courtId: { type: DataTypes.INTEGER, field: 'court_id' },
     realName: { type: DataTypes.STRING(32), field: 'real_name' },
     phone: { type: DataTypes.STRING(20) },
+    region: { type: DataTypes.STRING(64) },
+    idCard: { type: DataTypes.STRING(32), field: 'id_card' },
+    bankName: { type: DataTypes.STRING(64), field: 'bank_name' },
+    bankAccount: { type: DataTypes.STRING(64), field: 'bank_account' },
     status: { type: DataTypes.TINYINT, defaultValue: 1 },
     lastLoginAt: { type: DataTypes.DATE, field: 'last_login_at' }
   }, {

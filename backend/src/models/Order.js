@@ -10,6 +10,9 @@ module.exports = (sequelize) => {
     scheduleId: { type: DataTypes.INTEGER, field: 'schedule_id' },
     amount: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
     payAmount: { type: DataTypes.DECIMAL(10, 2), field: 'pay_amount' },
+    floorPrice: { type: DataTypes.DECIMAL(10, 2), field: 'floor_price' },
+    channelFee: { type: DataTypes.DECIMAL(10, 2), field: 'channel_fee' },
+    agencyFee: { type: DataTypes.DECIMAL(10, 2), field: 'agency_fee' },
     status: {
       type: DataTypes.ENUM('pending', 'paid', 'refunded', 'canceled', 'completed', 'booked'),
       defaultValue: 'pending'

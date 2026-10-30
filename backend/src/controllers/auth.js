@@ -228,7 +228,10 @@ async function adminLogin(req, res) {
   if (!username || !password) throw new BizError(ErrorCode.PARAM_INVALID, '请输入用户名和密码');
   const admin = await Admin.findOne({ where: { username } });
   if (!admin) throw new BizError(ErrorCode.PARAM_INVALID, '用户名或密码错误');
-  if (admin.status !== 1) throw new BizError(ErrorCode.FORBIDDEN, '账号已被禁用');
+  if (admin.status !== 1) {
+    const message = admin.role === 'city_manager' ? '城市经理账号未启用，请联系运营开通' : '账号已被禁用';
+    throw new BizError(ErrorCode.FORBIDDEN, message);
+  }
   if (!(await admin.verifyPassword(password))) throw new BizError(ErrorCode.PARAM_INVALID, '用户名或密码错误');
   admin.lastLoginAt = new Date(); await admin.save();
   const payload = { id: admin.id, username: admin.username, role: admin.role, courtId: admin.courtId };
@@ -674,6 +677,17 @@ async function getMyCourts(req, res) {
       openTime: c.openTime, closeTime: c.closeTime, openHours: c.openHours || null,
       description: c.description, status: c.status,
       rating: c.rating != null ? parseFloat(c.rating) : 0,
+      entityType: c.entityType || '',
+      creditCode: c.creditCode || '',
+      taxpayerType: c.taxpayerType || '',
+      invoiceTitle: c.invoiceTitle || '',
+      invoiceTaxNo: c.invoiceTaxNo || '',
+      invoiceAddress: c.invoiceAddress || '',
+      invoiceBank: c.invoiceBank || '',
+      invoicePhone: c.invoicePhone || '',
+      settleAccountName: c.settleAccountName || '',
+      settleBankName: c.settleBankName || '',
+      settleBankAccount: c.settleBankAccount || '',
       createdAt: c.createdAt
     })),
     total: courts.length
@@ -691,7 +705,9 @@ async function updateMyCourt(req, res) {
   const body = req.body || {};
   const ALLOWED_TYPES = ['11人制', '8人制', '7人制', '5人制', '3人制'];
   const allowed = ['name', 'address', 'district', 'type', 'types', 'phone', 'price', 'openTime', 'closeTime',
-    'description', 'surfaceType', 'surfaceTypes', 'openHours', 'longitude', 'latitude', 'images'];
+    'description', 'surfaceType', 'surfaceTypes', 'openHours', 'longitude', 'latitude', 'images',
+    'entityType', 'creditCode', 'taxpayerType', 'invoiceTitle', 'invoiceTaxNo', 'invoiceAddress',
+    'invoiceBank', 'invoicePhone', 'settleAccountName', 'settleBankName', 'settleBankAccount'];
   for (const key of allowed) {
     if (body[key] === undefined) continue;
     if (key === 'price') court.price = Number(body.price) || 0;

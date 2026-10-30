@@ -69,3 +69,13 @@ export const teamApi = {
   update: (id, data) => request.put(`/admin/teams/${id}`, data),
   remove: (id) => request.delete(`/admin/teams/${id}`)
 };
+
+export const cityManagerApi = {
+  list: (params) => request.get('/admin/city-managers', { params }),
+  courtOptions: () => request.get('/admin/city-managers/court-options'),
+  create: (data) => request.post('/admin/city-managers', data),
+  update: (id, data) => request.put(`/admin/city-managers/${id}`, data),
+  resetPassword: (id) => request.post(`/admin/city-managers/${id}/reset-password`),
+  me: () => request.get('/admin/city-managers/me'),
+  myOrders: () => request.get('/admin/city-managers/me/orders')
+};

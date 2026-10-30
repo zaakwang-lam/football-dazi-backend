@@ -5,6 +5,7 @@ const wechatMsg = require('../services/wechat-msg');
 const { success, fail, BizError, ErrorCode } = require('../utils/response');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
+const { applyPendingFloor, splitPaid } = require('../utils/floor-price');
 
 
 function scheduleOwnerNotify(order, court, schedule) {
@@ -108,11 +109,13 @@ async function createOrder(req, res) {
   if (!schedule) throw new BizError(ErrorCode.NOT_FOUND, '排期不存在，请重新选择时段');
   if (schedule.status === 'booked') throw new BizError(ErrorCode.CONFLICT, '该时段已被预订');
   if (schedule.status === 'closed') throw new BizError(ErrorCode.CONFLICT, '该时段已关闭');
+  await applyPendingFloor(schedule);
   const amount = Number(schedule.price != null ? schedule.price : (schedule.court?.price || 0)) || 0;
   const needPay = amount > 0;
   const order = await Order.create({
     orderNo: wechatPay.generateOrderNo('O'), userId, courtId, scheduleId,
-    amount, status: needPay ? 'pending' : 'booked',
+    amount, floorPrice: schedule.floorPrice == null ? null : Number(schedule.floorPrice),
+    status: needPay ? 'pending' : 'booked',
     contactName, contactPhone, remark: remark || '', notifyStatus: 'pending'
   });
   schedule.status = 'booked';
@@ -186,9 +189,12 @@ async function paymentNotify(req, res) {
       });
       if (order) {
         const paidYuan = parseInt(result.total_fee, 10) / 100;
+        const split = splitPaid(paidYuan, order.floorPrice);
         order.payMethod = 'wxpay';
         order.transactionId = result.transaction_id;
-        order.payAmount = paidYuan;
+        order.payAmount = split.payAmount;
+        order.channelFee = split.channelFee;
+        order.agencyFee = split.agencyFee;
         order.payTime = new Date();
         await PaymentOrder.update(
           { status: 'paid', transactionId: result.transaction_id, payTime: new Date() },

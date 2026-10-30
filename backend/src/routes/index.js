@@ -13,6 +13,7 @@ const dashCtrl = require('../controllers/dashboard');
 const courtDashCtrl = require('../controllers/court-dashboard');
 const bannerCtrl = require('../controllers/banner');
 const financeCtrl = require('../controllers/finance');
+const cityManagerCtrl = require('../controllers/city-manager');
 
 router.post('/api/admin/login', authCtrl.adminLogin);
 router.post('/api/admin/refresh', authCtrl.refreshToken);
@@ -112,6 +113,13 @@ router.post('/api/admin/users/:id/reset-role', adminAuth(['super_admin', 'ops'])
 router.get('/api/admin/teams', adminAuth(['super_admin', 'ops']), teamCtrl.adminListTeams);
 router.put('/api/admin/teams/:id', adminAuth(['super_admin', 'ops']), teamCtrl.adminUpdateTeam);
 router.delete('/api/admin/teams/:id', adminAuth(['super_admin', 'ops']), teamCtrl.adminDeleteTeam);
+router.get('/api/admin/city-managers/court-options', adminAuth(['super_admin', 'ops']), cityManagerCtrl.courtOptions);
+router.get('/api/admin/city-managers/me', adminAuth(['city_manager']), cityManagerCtrl.me);
+router.get('/api/admin/city-managers/me/orders', adminAuth(['city_manager']), cityManagerCtrl.myOrders);
+router.get('/api/admin/city-managers', adminAuth(['super_admin', 'ops']), cityManagerCtrl.list);
+router.post('/api/admin/city-managers', adminAuth(['super_admin', 'ops']), cityManagerCtrl.create);
+router.put('/api/admin/city-managers/:id', adminAuth(['super_admin', 'ops']), cityManagerCtrl.update);
+router.post('/api/admin/city-managers/:id/reset-password', adminAuth(['super_admin', 'ops']), cityManagerCtrl.resetPassword);
 
 const aaCtrl = require('../controllers/aa');
 router.get('/api/v1/teams/:id/aa', userAuth(), aaCtrl.list);

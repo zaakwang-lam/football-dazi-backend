@@ -55,7 +55,8 @@ const ROLE_LABEL = {
   super_admin: '超级管理员',
   ops: '运营',
   court_admin: '球场管理员',
-  finance: '财务'
+  finance: '财务',
+  city_manager: '城市经理'
 };
 const roleLabel = computed(() => ROLE_LABEL[authStore.adminInfo?.role] || authStore.adminInfo?.role || '-');
 

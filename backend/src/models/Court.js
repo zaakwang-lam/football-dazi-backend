@@ -23,6 +23,17 @@ module.exports = (sequelize) => {
     tags: { type: DataTypes.JSON },
     description: { type: DataTypes.TEXT },
     openHours: { type: DataTypes.JSON, field: 'open_hours' },
+    entityType: { type: DataTypes.STRING(16), field: 'entity_type' },
+    creditCode: { type: DataTypes.STRING(32), field: 'credit_code' },
+    taxpayerType: { type: DataTypes.STRING(16), field: 'taxpayer_type' },
+    invoiceTitle: { type: DataTypes.STRING(64), field: 'invoice_title' },
+    invoiceTaxNo: { type: DataTypes.STRING(32), field: 'invoice_tax_no' },
+    invoiceAddress: { type: DataTypes.STRING(128), field: 'invoice_address' },
+    invoiceBank: { type: DataTypes.STRING(128), field: 'invoice_bank' },
+    invoicePhone: { type: DataTypes.STRING(20), field: 'invoice_phone' },
+    settleAccountName: { type: DataTypes.STRING(64), field: 'settle_account_name' },
+    settleBankName: { type: DataTypes.STRING(64), field: 'settle_bank_name' },
+    settleBankAccount: { type: DataTypes.STRING(64), field: 'settle_bank_account' },
     status: { type: DataTypes.TINYINT, defaultValue: 2 },
     rating: { type: DataTypes.DECIMAL(2, 1), defaultValue: 5.0 }
   }, { tableName: 'courts' });

@@ -34,9 +34,20 @@ const routes = [
       { path: 'users', name: 'OpsUsers', component: () => import('@/views/ops/Users.vue'), meta: { title: '用户管理' } },
       { path: 'teams', name: 'OpsTeams', component: () => import('@/views/ops/Teams.vue'), meta: { title: '球队管理' } },
       { path: 'courts', name: 'OpsCourts', component: () => import('@/views/ops/Courts.vue'), meta: { title: '场地审核' } },
+      { path: 'city-managers', name: 'OpsCityManagers', component: () => import('@/views/ops/CityManagers.vue'), meta: { title: '城市经理' } },
       { path: 'orders', name: 'OpsOrders', component: () => import('@/views/ops/Orders.vue'), meta: { title: '全平台订单' } },
       { path: 'finance', name: 'OpsFinance', component: () => import('@/views/ops/Finance.vue'), meta: { title: '财务管理' } },
       { path: 'account', name: 'OpsAccount', component: () => import('@/views/Account.vue'), meta: { title: '账号安全' } }
+    ]
+  },
+  {
+    path: '/cm',
+    component: () => import('@/layouts/CmLayout.vue'),
+    meta: { requiresAuth: true, requiresRole: ['city_manager'] },
+    children: [
+      { path: '', redirect: '/cm/home' },
+      { path: 'home', name: 'CmHome', component: () => import('@/views/cm/Home.vue'), meta: { title: '我的业务' } },
+      { path: 'account', name: 'CmAccount', component: () => import('@/views/Account.vue'), meta: { title: '账号安全' } }
     ]
   },
   {
@@ -61,7 +72,14 @@ router.beforeEach((to, from, next) => {
 
   if (to.meta.requiresRole && !to.meta.requiresRole.includes(authStore.role)) {
     ElMessage.error('权限不足');
-    next('/');
+    if (authStore.role === 'city_manager') next('/cm');
+    else if (authStore.role === 'court_admin') next('/dashboard');
+    else next('/ops/dashboard');
+    return;
+  }
+
+  if (authStore.isLoggedIn && authStore.role === 'city_manager' && !to.path.startsWith('/cm') && to.path !== '/login') {
+    next('/cm');
     return;
   }
 

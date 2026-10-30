@@ -39,6 +39,10 @@
           <el-icon><Location /></el-icon>
           <span>场地审核</span>
         </el-menu-item>
+        <el-menu-item index="/ops/city-managers">
+          <el-icon><Avatar /></el-icon>
+          <span>城市经理</span>
+        </el-menu-item>
         <el-menu-item index="/ops/orders">
           <el-icon><Document /></el-icon>
           <span>订单管理</span>
@@ -99,7 +103,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { ElMessage } from 'element-plus';
 import {
-  DataBoard, User, UserFilled, Location, Document, Money, ArrowDown, SwitchButton, Picture, Lock, Menu
+  DataBoard, User, UserFilled, Location, Document, Money, ArrowDown, SwitchButton, Picture, Lock, Menu, Avatar
 } from '@element-plus/icons-vue';
 
 const router = useRouter();
